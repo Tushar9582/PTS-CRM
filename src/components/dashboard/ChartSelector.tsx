@@ -207,11 +207,25 @@ export const ChartSelector: React.FC<ChartSelectorProps> = ({
   };
 
   const groupDataByMonth = (data: any, dateField: string): ChartData[] => {
-    if (!data || (Array.isArray(data) && data.length === 0)) return [];
+    if (!data || (Array.isArray(data) && data.length === 0)) {
+      // Return empty data structure with proper months
+      const now = new Date();
+      const nextMonth = addMonths(now, 1);
+      const startDate = subMonths(now, 5);
+      const endDate = nextMonth;
+      
+      return eachMonthOfInterval({
+        start: startDate,
+        end: endDate
+      }).map(date => ({
+        month: format(date, 'MMM yyyy'),
+        count: 0
+      }));
+    }
 
     const now = new Date();
     const nextMonth = addMonths(now, 1);
-    const startDate = subMonths(now, 5); // Show last 6 months + next month
+    const startDate = subMonths(now, 5);
     const endDate = nextMonth;
     
     const allMonths = eachMonthOfInterval({
@@ -253,7 +267,7 @@ export const ChartSelector: React.FC<ChartSelectorProps> = ({
     const data = chartData[dataType as keyof typeof chartData];
     return timeRange === 'yearly' ? 
       getFullYearData(data) : 
-      data; // Already filtered to show last 6 months + next month
+      data;
   };
 
   const getFullYearData = (monthlyData: ChartData[]): ChartData[] => {
@@ -278,10 +292,12 @@ export const ChartSelector: React.FC<ChartSelectorProps> = ({
   };
 
   const renderBarChart = () => {
+    const data = dataType === 'leads' && showStatusChart ? statusData : getChartData();
+    
     if (dataType === 'leads' && showStatusChart) {
       // Status-wise bar chart for leads
       return (
-        <BarChart data={statusData}>
+        <BarChart data={data}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="status" />
           <YAxis />
@@ -290,10 +306,9 @@ export const ChartSelector: React.FC<ChartSelectorProps> = ({
           <Bar 
             dataKey="count"
             name="Leads by Status"
-            fill="#9b87f5"
             radius={[4, 4, 0, 0]}
           >
-            {statusData.map((entry, index) => (
+            {data.map((entry, index) => (
               <Cell 
                 key={`cell-${index}`} 
                 fill={STATUS_COLORS[entry.status] || '#8884d8'} 
@@ -305,7 +320,7 @@ export const ChartSelector: React.FC<ChartSelectorProps> = ({
     } else {
       // Time-based bar chart for all data types
       return (
-        <BarChart data={getChartData()}>
+        <BarChart data={data}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="month" />
           <YAxis />
@@ -314,6 +329,66 @@ export const ChartSelector: React.FC<ChartSelectorProps> = ({
         </BarChart>
       );
     }
+  };
+
+  const renderLineChart = () => {
+    const data = getChartData();
+    
+    return (
+      <LineChart data={data}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="month" />
+        <YAxis />
+        <Tooltip />
+        <Line
+          type="monotone"
+          dataKey="count"
+          stroke="#9b87f5"
+          activeDot={{ r: 8 }}
+          strokeWidth={2}
+        />
+      </LineChart>
+    );
+  };
+
+  const renderPieChart = () => {
+    const data = dataType === 'leads' && showStatusChart ? statusData : getChartData();
+    const pieData = data.filter(item => item.count > 0);
+    
+    if (pieData.length === 0) {
+      return (
+        <div className="flex items-center justify-center h-full">
+          <p className="text-muted-foreground">No data available for pie chart</p>
+        </div>
+      );
+    }
+    
+    return (
+      <PieChart>
+        <Pie
+          data={pieData}
+          cx="50%"
+          cy="50%"
+          labelLine={false}
+          outerRadius={100}
+          fill="#8884d8"
+          dataKey="count"
+          nameKey={dataType === 'leads' && showStatusChart ? 'status' : 'month'}
+          label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+        >
+          {pieData.map((entry, index) => (
+            <Cell 
+              key={`cell-${index}`} 
+              fill={dataType === 'leads' && showStatusChart ? 
+                (STATUS_COLORS[entry.status] || '#8884d8') : 
+                COLORS[index % COLORS.length]} 
+            />
+          ))}
+        </Pie>
+        <Tooltip />
+        <Legend />
+      </PieChart>
+    );
   };
 
   if (loading) {
@@ -395,47 +470,13 @@ export const ChartSelector: React.FC<ChartSelectorProps> = ({
 
         <TabsContent value="line" className="h-[300px]">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={getChartData()}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="month" />
-              <YAxis />
-              <Tooltip />
-              <Line
-                type="monotone"
-                dataKey="count"
-                stroke="#9b87f5"
-                activeDot={{ r: 8 }}
-                strokeWidth={2}
-              />
-            </LineChart>
+            {renderLineChart()}
           </ResponsiveContainer>
         </TabsContent>
 
         <TabsContent value="pie" className="h-[300px]">
           <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={dataType === 'leads' ? statusData : getChartData()}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                outerRadius={100}
-                fill="#8884d8"
-                dataKey="count"
-                nameKey={dataType === 'leads' ? 'status' : 'month'}
-                label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-              >
-                {(dataType === 'leads' ? statusData : getChartData()).map((entry, index) => (
-                  <Cell 
-                    key={`cell-${index}`} 
-                    fill={dataType === 'leads' ? 
-                      (STATUS_COLORS[entry.status] || '#8884d8') : 
-                      COLORS[index % COLORS.length]} 
-                  />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
+            {renderPieChart()}
           </ResponsiveContainer>
         </TabsContent>
       </Tabs>

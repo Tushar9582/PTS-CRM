@@ -10,10 +10,78 @@ import {
   UserCredential,
   sendEmailVerification,
   applyActionCode,
-  checkActionCode,
-  verifyBeforeUpdateEmail
+  onAuthStateChanged
 } from 'firebase/auth';
 import { getDatabase, ref, set, get, update } from 'firebase/database';
+
+// Encryption key (should be stored securely in production)
+const ENCRYPTION_KEY = 'a1b2c3d4e5f6g7h8a1b2c3d4e5f6g7h8'; // 32 chars for AES-256
+
+// Encryption utility functions
+async function encryptData(data: string): Promise<string> {
+  if (!data) return data;
+  
+  const encoder = new TextEncoder();
+  const encodedData = encoder.encode(data);
+  
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(ENCRYPTION_KEY),
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt']
+  );
+  
+  const encrypted = await crypto.subtle.encrypt(
+    {
+      name: 'AES-GCM',
+      iv: iv
+    },
+    key,
+    encodedData
+  );
+  
+  const combined = new Uint8Array(iv.length + encrypted.byteLength);
+  combined.set(iv);
+  combined.set(new Uint8Array(encrypted), iv.length);
+  
+  return btoa(String.fromCharCode(...combined));
+}
+
+async function decryptData(encryptedData: string): Promise<string> {
+  if (!encryptedData) return encryptedData;
+  
+  try {
+    const decoder = new TextDecoder();
+    const combined = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
+    
+    const iv = combined.slice(0, 12);
+    const data = combined.slice(12);
+    
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(ENCRYPTION_KEY),
+      { name: 'AES-GCM' },
+      false,
+      ['decrypt']
+    );
+    
+    const decrypted = await crypto.subtle.decrypt(
+      {
+        name: 'AES-GCM',
+        iv: iv
+      },
+      key,
+      data
+    );
+    
+    return decoder.decode(decrypted);
+  } catch (error) {
+    console.error('Decryption failed:', error);
+    return encryptedData;
+  }
+}
 
 type UserRole = 'admin' | 'agent' | null;
 
@@ -45,14 +113,14 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDNLOemKph8QXlzj8br6IAXL6tzTGxXMg8",
-  authDomain: "pts-lms-e82cf.firebaseapp.com",
-  databaseURL: "https://pts-lms-e82cf-default-rtdb.firebaseio.com",
-  projectId: "pts-lms-e82cf",
-  storageBucket: "pts-lms-e82cf.firebasestorage.app",
-  messagingSenderId: "392587751138",
-  appId: "1:392587751138:web:0c8efa50032c998a6238bb",
-  measurementId: "G-HH35ZQX74J"
+  apiKey: "AIzaSyAuzGxddzJTYUAcXV7QQH-ep6qULJfWbh8",
+  authDomain: "pts-crm-a3cae.firebaseapp.com",
+  databaseURL: "https://pts-crm-a3cae-default-rtdb.firebaseio.com",
+  projectId: "pts-crm-a3cae",
+  storageBucket: "pts-crm-a3cae.firebasestorage.app",
+  messagingSenderId: "431606697445",
+  appId: "1:431606697445:web:715a36cd0ab5b2a69fb30c",
+  measurementId: "G-F6BPMDT4NH"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -63,12 +131,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const navigate = useNavigate();
 
-  const adminId = localStorage.getItem('adminkey');
-  const agentId = localStorage.getItem('agentkey') || user?.uid;
-  const role = localStorage.getItem('userRole');
-
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         await handleUserAuth(firebaseUser);
       } else {
@@ -107,7 +171,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const setAgentAuthState = (firebaseUser: FirebaseUser, agentData: {firstName: string, lastName: string, parentAdminId: string}) => {
+  const setAgentAuthState = async (firebaseUser: FirebaseUser, agentData: {firstName: string, lastName: string, parentAdminId: string}) => {
     setUser({
       id: firebaseUser.uid,
       firstName: agentData.firstName,
@@ -139,12 +203,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         for (const [adminId, adminData] of Object.entries(snapshot.val()) as [string, any][]) {
           if (adminData.agents) {
             for (const [agentId, agentData] of Object.entries(adminData.agents) as [string, any][]) {
-              if (agentData.email === email) {
-                return {
-                  firstName: agentData.firstName,
-                  lastName: agentData.lastName,
-                  parentAdminId: adminId
-                };
+              try {
+                const decryptedEmail = await decryptData(agentData.email);
+                if (decryptedEmail === email) {
+                  return {
+                    firstName: await decryptData(agentData.firstName),
+                    lastName: await decryptData(agentData.lastName),
+                    parentAdminId: adminId
+                  };
+                }
+              } catch (error) {
+                console.error('Error decrypting agent data:', error);
+                continue;
               }
             }
           }
@@ -162,7 +232,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const firebaseUser = userCredential.user;
       
-      // Send verification email immediately after signup
       await sendEmailVerification(firebaseUser);
       
       await set(ref(database, `users/${firebaseUser.uid}`), {
@@ -173,7 +242,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         createdAt: new Date().toISOString(),
         leadLimit,
         agentLimit,
-        emailVerified: false // Initially false until verified
+        emailVerified: false
       });
 
       setUser({
@@ -198,12 +267,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('No user is currently signed in');
       }
       
-      // Check when last verification was sent
       const lastSent = localStorage.getItem(`lastVerificationSent_${user.uid}`);
       if (lastSent) {
         const lastSentTime = parseInt(lastSent, 10);
         const now = Date.now();
-        const cooldownPeriod = 60 * 1000; // 1 minute cooldown
+        const cooldownPeriod = 60 * 1000;
         
         if (now - lastSentTime < cooldownPeriod) {
           throw new Error('Please wait before requesting another verification email');
@@ -223,7 +291,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const checkEmailVerification = async (email: string): Promise<boolean> => {
     try {
-      // Reload the user to get fresh email verification status
       await auth.currentUser?.reload();
       const currentUser = auth.currentUser;
       
@@ -231,7 +298,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('No user is currently signed in');
       }
       
-      // Also check our database for consistency
       const userRef = ref(database, `users/${currentUser.uid}`);
       const snapshot = await get(userRef);
       
@@ -249,17 +315,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const verifyEmail = async (oobCode: string) => {
     try {
-      // Verify the action code
       await applyActionCode(auth, oobCode);
       
-      // Update email verification status in database
       const user = auth.currentUser;
       if (user) {
         await update(ref(database, `users/${user.uid}`), {
           emailVerified: true
         });
         
-        // Reload user to get fresh data
         await handleUserAuth(user);
       }
     } catch (error: any) {
@@ -278,14 +341,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error(error.message || 'Failed to resend verification email');
     }
   };
-  
 
   const login = async (email: string, password: string, role: UserRole): Promise<UserCredential> => {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const firebaseUser = userCredential.user;
       
-      // Check if email is verified
       if (!firebaseUser.emailVerified) {
         await auth.signOut();
         throw new Error('Please verify your email before logging in. Check your inbox for the verification link.');
@@ -328,28 +389,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
-
+    const role = localStorage.getItem('userRole');
+    const adminId = localStorage.getItem('adminkey');
+    const agentId = localStorage.getItem('agentkey');
 
     try {
       await signOut(auth);
       clearAuthState();
       navigate('/login');
 
-      if(role == 'agent'){
+      if(role === 'agent' && adminId && agentId){
         const logoutRef = ref(database, `users/${adminId}/agents/${agentId}`);
-        const now = new Date().toLocaleString(); // or toISOString()
+        const now = new Date().toLocaleString();
         try {
           await update(logoutRef, {
             logoutTime: now
           });
-          localStorage.clear()
         } catch (error) {
           console.error('Failed to update logout time:', error);
         }
       }
-     
-
-
     } catch (error: any) {
       throw new Error(error.message);
     }

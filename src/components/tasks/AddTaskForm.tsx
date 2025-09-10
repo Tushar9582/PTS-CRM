@@ -1,4 +1,3 @@
-// AddTaskForm.tsx
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,12 +17,128 @@ import {
 } from '@/components/ui/select';
 import { Agent, Task } from '@/lib/mockData';
 
+// Encryption key - in a real app, this should be securely managed
+const ENCRYPTION_KEY = 'a1b2c3d4e5f6g7h8a1b2c3d4e5f6g7h8'; // 32 chars for AES-256
+
 interface AddTaskFormProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (task: Task) => void;
   task?: Task | null;
   agents: Agent[];
+}
+
+// Helper function to encrypt data
+async function encryptData(data: string): Promise<string> {
+  if (!data) return data;
+  
+  const encoder = new TextEncoder();
+  const encodedData = encoder.encode(data);
+  
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(ENCRYPTION_KEY),
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt']
+  );
+  
+  const encrypted = await crypto.subtle.encrypt(
+    {
+      name: 'AES-GCM',
+      iv: iv
+    },
+    key,
+    encodedData
+  );
+  
+  // Combine iv and encrypted data
+  const combined = new Uint8Array(iv.length + encrypted.byteLength);
+  combined.set(iv);
+  combined.set(new Uint8Array(encrypted), iv.length);
+  
+  return btoa(String.fromCharCode(...combined));
+}
+
+// Helper function to decrypt data
+async function decryptData(encryptedData: string): Promise<string> {
+  if (!encryptedData) return encryptedData;
+  
+  try {
+    const decoder = new TextDecoder();
+    const combined = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
+    
+    const iv = combined.slice(0, 12);
+    const data = combined.slice(12);
+    
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(ENCRYPTION_KEY),
+      { name: 'AES-GCM' },
+      false,
+      ['decrypt']
+    );
+    
+    const decrypted = await crypto.subtle.decrypt(
+      {
+        name: 'AES-GCM',
+        iv: iv
+      },
+      key,
+      data
+    );
+    
+    return decoder.decode(decrypted);
+  } catch (error) {
+    console.error('Decryption failed:', error);
+    return encryptedData; // Return original if decryption fails
+  }
+}
+
+// Function to encrypt task values (except id and agentId)
+async function encryptTask(task: Task): Promise<Task> {
+  const encryptedTask = { ...task };
+  
+  // Encrypt each field that needs encryption
+  encryptedTask.title = await encryptData(task.title);
+  encryptedTask.description = await encryptData(task.description);
+  encryptedTask.agentName = await encryptData(task.agentName);
+  encryptedTask.startDate = await encryptData(task.startDate);
+  encryptedTask.endDate = await encryptData(task.endDate);
+  encryptedTask.priority = await encryptData(task.priority);
+  encryptedTask.status = await encryptData(task.status);
+  
+  return encryptedTask;
+}
+
+// Function to decrypt task values
+async function decryptTask(task: Task): Promise<Task> {
+  const decryptedTask = { ...task };
+  
+  // Decrypt each encrypted field
+  decryptedTask.title = await decryptData(task.title);
+  decryptedTask.description = await decryptData(task.description);
+  decryptedTask.agentName = await decryptData(task.agentName);
+  decryptedTask.startDate = await decryptData(task.startDate);
+  decryptedTask.endDate = await decryptData(task.endDate);
+  decryptedTask.priority = await decryptData(task.priority);
+  decryptedTask.status = await decryptData(task.status);
+  
+  return decryptedTask;
+}
+
+// Function to decrypt agent data
+async function decryptAgent(agent: Agent): Promise<Agent> {
+  const decryptedAgent = { ...agent };
+  
+  // Decrypt each encrypted field
+  decryptedAgent.name = await decryptData(agent.name);
+  decryptedAgent.email = await decryptData(agent.email);
+  decryptedAgent.phone = await decryptData(agent.phone);
+  decryptedAgent.designation = await decryptData(agent.designation);
+  
+  return decryptedAgent;
 }
 
 export const AddTaskForm: React.FC<AddTaskFormProps> = ({
@@ -44,26 +159,50 @@ export const AddTaskForm: React.FC<AddTaskFormProps> = ({
     priority: 'medium',
     status: 'pending'
   });
+  const [decryptedAgents, setDecryptedAgents] = useState<Agent[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (task) {
-      // If we're editing, populate the form with the task data
-      setFormData(task);
-    } else {
-      // If we're creating new, reset the form
-      setFormData({
-        id: '',
-        title: '',
-        description: '',
-        agentName: '',
-        agentId: '',
-        startDate: '',
-        endDate: '',
-        priority: 'medium',
-        status: 'pending'
-      });
-    }
-  }, [task]);
+    const initializeForm = async () => {
+      setIsLoading(true);
+      try {
+        // Decrypt all agents first
+        const decryptedAgents = await Promise.all(
+          agents.map(async agent => await decryptAgent(agent))
+        );
+        setDecryptedAgents(decryptedAgents);
+
+        if (task) {
+          // If we're editing, decrypt and populate the form with the task data
+          const decryptedTask = await decryptTask(task);
+          setFormData(decryptedTask);
+        } else {
+          // If we're creating new, reset the form
+          setFormData({
+            id: '',
+            title: '',
+            description: '',
+            agentName: '',
+            agentId: '',
+            startDate: '',
+            endDate: '',
+            priority: 'medium',
+            status: 'pending'
+          });
+        }
+      } catch (error) {
+        console.error('Decryption failed:', error);
+        setDecryptedAgents(agents); // Fallback to original agents if decryption fails
+        if (task) {
+          setFormData(task); // Fallback to original task if decryption fails
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    initializeForm();
+  }, [task, agents]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -71,7 +210,7 @@ export const AddTaskForm: React.FC<AddTaskFormProps> = ({
   };
 
   const handleAgentChange = (agentId: string) => {
-    const selectedAgent = agents.find(agent => agent.id === agentId);
+    const selectedAgent = decryptedAgents.find(agent => agent.id === agentId);
     if (selectedAgent) {
       setFormData(prev => ({
         ...prev,
@@ -81,16 +220,46 @@ export const AddTaskForm: React.FC<AddTaskFormProps> = ({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsLoading(true);
     
-    // Generate ID if it's a new task
-    const taskToSubmit = task 
-      ? formData 
-      : { ...formData, id: Date.now().toString() };
-    
-    onSubmit(taskToSubmit);
+    try {
+      // Encrypt the form data before submission
+      const encryptedTask = await encryptTask(formData);
+      
+      // Generate ID if it's a new task
+      const taskToSubmit = task 
+        ? encryptedTask 
+        : { ...encryptedTask, id: Date.now().toString() };
+      
+      onSubmit(taskToSubmit);
+    } catch (error) {
+      console.error('Encryption failed:', error);
+      // Fallback to submitting unencrypted data if encryption fails
+      const taskToSubmit = task 
+        ? formData 
+        : { ...formData, id: Date.now().toString() };
+      onSubmit(taskToSubmit);
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  if (isLoading) {
+    return (
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{task ? 'Edit Task' : 'Add New Task'}</DialogTitle>
+          </DialogHeader>
+          <div className="flex justify-center items-center py-8">
+            <p>Loading task data...</p>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -131,7 +300,7 @@ export const AddTaskForm: React.FC<AddTaskFormProps> = ({
                 <SelectValue placeholder="Select an agent" />
               </SelectTrigger>
               <SelectContent>
-                {agents.map(agent => (
+                {decryptedAgents.map(agent => (
                   <SelectItem key={agent.id} value={agent.id}>
                     {agent.name}
                   </SelectItem>
@@ -206,8 +375,8 @@ export const AddTaskForm: React.FC<AddTaskFormProps> = ({
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit">
-              {task ? 'Update Task' : 'Add Task'}
+            <Button type="submit" disabled={isLoading}>
+              {isLoading ? 'Processing...' : task ? 'Update Task' : 'Add Task'}
             </Button>
           </div>
         </form>

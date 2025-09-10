@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 interface LeadDetailsProps {
   lead: {
     id: string;
-    RA?: string;
+    Name?: string;
     Date?: string;
     Meeting_Date?: string;
     Meeting_Time?: string;
@@ -243,8 +243,8 @@ export const LeadDetails: React.FC<LeadDetailsProps> = ({
               <div className="grid grid-cols-2 gap-3">
                 {renderField('Industry', 'Industry')}
                 {renderField('Company Size', 'Employee_Size')}
-                {renderField('RA', 'RA')}
-                <div>
+                {renderField('Name', 'Name')}
+                {/* <div>
                   <p className="text-xs font-medium text-muted-foreground mb-1">Status</p>
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                     lead.Meeting_Status === 'Scheduled' ? 'bg-blue-100 text-blue-800' :
@@ -254,11 +254,11 @@ export const LeadDetails: React.FC<LeadDetailsProps> = ({
                   }`}>
                     {formatField(lead.Meeting_Status)}
                   </span>
-                </div>
+                </div> */}
               </div>
             </div>
             
-            {lead.Meeting_Date && (
+            {/* {lead.Meeting_Date && (
               <div className="bg-muted/10 p-3 rounded-lg mb-3">
                 <h4 className="font-medium text-sm mb-2">Meeting</h4>
                 <div className="grid grid-cols-2 gap-3">
@@ -266,7 +266,7 @@ export const LeadDetails: React.FC<LeadDetailsProps> = ({
                   {renderField('Time', 'Meeting_Time')}
                 </div>
               </div>
-            )}
+            )} */}
 
 {lead.Requirement && (
             <div className="bg-muted/10 p-3 rounded-lg">
@@ -361,14 +361,14 @@ export const LeadDetails: React.FC<LeadDetailsProps> = ({
               </div>
             </div>
             
-            {lead.Meeting_Takeaway && (
+            {/* {lead.Meeting_Takeaway && (
               <div className="bg-muted/10 p-3 rounded-lg">
                 <h4 className="font-medium text-sm mb-2">Takeaways</h4>
                 <div className="p-2 bg-muted/20 rounded-md text-sm h-20 overflow-y-auto">
                   {formatField(lead.Meeting_Takeaway)}
                 </div>
               </div>
-            )}
+            )} */}
           </div>
         </div>
         

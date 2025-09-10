@@ -8,6 +8,41 @@ import { ref, onValue, off, update } from 'firebase/database';
 import { database } from '../firebase';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
+// Encryption key - should be stored securely in production
+const ENCRYPTION_KEY = 'a1b2c3d4e5f6g7h8a1b2c3d4e5f6g7h8'; // 32 chars for AES-256
+
+// Helper function to decrypt data
+async function decryptData(encryptedData: string): Promise<string> {
+  if (!encryptedData) return encryptedData;
+  
+  try {
+    const decoder = new TextDecoder();
+    const combined = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
+    
+    const iv = combined.slice(0, 12);
+    const data = combined.slice(12);
+    
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(ENCRYPTION_KEY),
+      { name: 'AES-GCM' },
+      false,
+      ['decrypt']
+    );
+    
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv },
+      key,
+      data
+    );
+    
+    return decoder.decode(decrypted);
+  } catch (error) {
+    console.error('Decryption failed:', error);
+    return encryptedData;
+  }
+}
+
 interface Agent {
   id: string;
   name: string;
@@ -63,6 +98,27 @@ export const AssignLeads = () => {
     return { total, uniqueRanges: assignedRanges.size };
   };
 
+  // Function to decrypt agent data
+  const decryptAgent = async (agentData: any): Promise<Agent> => {
+    try {
+      return {
+        id: agentData.id,
+        name: await decryptData(agentData.name),
+        email: await decryptData(agentData.email),
+        status: agentData.status,
+        from: agentData.from,
+        to: agentData.to
+      };
+    } catch (error) {
+      console.error('Error decrypting agent:', error);
+      return {
+        ...agentData,
+        name: agentData.name, // Fallback to encrypted if decryption fails
+        email: agentData.email
+      };
+    }
+  };
+
   // Fetch agents and calculate lead statistics
   useEffect(() => {
     if (!adminId) return;
@@ -70,28 +126,35 @@ export const AssignLeads = () => {
     const agentsRef = ref(database, `users/${adminId}/agents`);
     const leadsRef = ref(database, `users/${adminId}/leads`);
 
-    const fetchData = () => {
+    const fetchData = async () => {
       // First get total leads count
-      onValue(leadsRef, (leadsSnapshot) => {
+      onValue(leadsRef, async (leadsSnapshot) => {
         const totalLeads = leadsSnapshot.size || 0;
         
         // Then get agents and calculate assigned leads
-        onValue(agentsRef, (agentsSnapshot) => {
+        onValue(agentsRef, async (agentsSnapshot) => {
           const agentsData: Agent[] = [];
           const ranges: Record<string, { from: string; to: string }> = {};
 
+          // Decrypt all agents in parallel
+          const decryptionPromises: Promise<Agent>[] = [];
+          
           agentsSnapshot.forEach((childSnapshot) => {
             const agent = childSnapshot.val();
-            agentsData.push({
-              id: childSnapshot.key || '',
-              name: agent.name,
-              email: agent.email,
-              status: agent.status,
-              from: agent.from || '',
-              to: agent.to || ''
-            });
+            decryptionPromises.push(
+              decryptAgent({
+                id: childSnapshot.key || '',
+                ...agent
+              })
+            );
+          });
 
-            ranges[childSnapshot.key || ''] = {
+          // Wait for all agents to be decrypted
+          const decryptedAgents = await Promise.all(decryptionPromises);
+          
+          decryptedAgents.forEach(agent => {
+            agentsData.push(agent);
+            ranges[agent.id] = {
               from: agent.from || '',
               to: agent.to || ''
             };
@@ -245,7 +308,7 @@ export const AssignLeads = () => {
                   <td className="p-3">
                     <div className="flex items-center">
                       <Avatar className="h-8 w-8 mr-2">
-                        <AvatarFallback>{agent.name.charAt(0)}</AvatarFallback>
+                        <AvatarFallback>{agent.name?.charAt(0) || 'A'}</AvatarFallback>
                       </Avatar>
                       <div>
                         <p className="font-medium">{agent.name}</p>
@@ -345,7 +408,7 @@ export const AssignLeads = () => {
           >
             <div className="flex items-center mb-4">
               <Avatar className="h-10 w-10 mr-3">
-                <AvatarFallback>{agent.name.charAt(0)}</AvatarFallback>
+                <AvatarFallback>{agent.name?.charAt(0) || 'A'}</AvatarFallback>
               </Avatar>
               <div>
                 <h3 className="font-medium">{agent.name}</h3>
@@ -430,7 +493,7 @@ export const AssignLeads = () => {
                       onClick={() => paginate(pageNumber)}
                       className="h-8 w-8 p-0"
                     >
-                      {/* {number} */}
+                      {pageNumber}
                     </Button>
                   );
                 })}

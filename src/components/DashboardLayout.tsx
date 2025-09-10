@@ -42,8 +42,69 @@ import {
   SelectItem,
 } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
-import ScheduleNotifications from '@/ScheduleNotifications';
-import MeetingDetails from '@/MeetingDetails';
+
+// Encryption key - should match your encryption key
+const ENCRYPTION_KEY = 'a1b2c3d4e5f6g7h8a1b2c3d4e5f6g7h8'; // 32 chars for AES-256
+
+// Helper function to decrypt data using Web Crypto API
+async function decryptData(encryptedData: string): Promise<string> {
+  if (!encryptedData) return encryptedData;
+  
+  try {
+    const decoder = new TextDecoder();
+    const combined = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
+    
+    const iv = combined.slice(0, 12);
+    const data = combined.slice(12);
+    
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(ENCRYPTION_KEY),
+      { name: 'AES-GCM' },
+      false,
+      ['decrypt']
+    );
+    
+    const decrypted = await crypto.subtle.decrypt(
+      {
+        name: 'AES-GCM',
+        iv: iv
+      },
+      key,
+      data
+    );
+    
+    return decoder.decode(decrypted);
+  } catch (error) {
+    console.error('Decryption failed:', error);
+    return encryptedData; // Return original if decryption fails
+  }
+}
+
+// Function to decrypt user data
+async function decryptUser(userData: any): Promise<any> {
+  const decryptedUser = { ...userData };
+  
+  // Decrypt each encrypted field
+  if (userData.firstName) decryptedUser.firstName = await decryptData(userData.firstName);
+  if (userData.lastName) decryptedUser.lastName = await decryptData(userData.lastName);
+  if (userData.email) decryptedUser.email = await decryptData(userData.email);
+  if (userData.phone) decryptedUser.phone = await decryptData(userData.phone);
+  
+  return decryptedUser;
+}
+
+// Function to decrypt agent data
+async function decryptAgent(agentData: any): Promise<any> {
+  const decryptedAgent = { ...agentData };
+  
+  // Decrypt each encrypted field
+  if (agentData.name) decryptedAgent.name = await decryptData(agentData.name);
+  if (agentData.email) decryptedAgent.email = await decryptData(agentData.email);
+  if (agentData.phone) decryptedAgent.phone = await decryptData(agentData.phone);
+  
+  return decryptedAgent;
+}
 
 type Language = 'en' | 'hi' | 'es' | 'fr' | 'mr';
 
@@ -68,11 +129,11 @@ const voiceMessages = {
     dashboard: "डैशबोर्ड आपके प्रमुख मेट्रिक्स जैसे कुल लीड, रूपांतरण और आगामी कार्य दिखाता है।",
     leads: "लीड्स सेक्शन में, आप सभी संभावित ग्राहकों को प्रबंधित कर सकते हैं, इंटरैक्शन ट्रैक कर सकते हैं और स्थिति अपडेट कर सकते हैं। आप लीड्स को आयात और निर्यात भी कर सकते हैं, और सीधे अपने लीड्स को कॉल और संदेश भेज सकते हैं।",
     tasks: "टास्क्स सेक्शन रिमाइंडर और ड्यू डेट के साथ फॉलो-अप और महत्वपूर्ण गतिविधियों को व्यवस्थित करने में मदद करता है।",
-    meetings: "कैलेंडर इंटीग्रेशन का उपयोग करके लीड के साथ मीटिंग शेड्यूल करें और प्रबंधित करें।",
-    deals: "बिक्री पाइपलाइन में विभिन्न चरणों के माध्यम से संभावित डील को ट्रैक करें।",
-    agents: "एडमिन के रूप में, आप अपनी सेल्स टीम के सदस्यों को प्रबंधित कर सकते हैं और लीड असाइन कर सकते हैं।",
-    settings: "अपने वर्कफ़्लो और प्राथमिकताओं से मेल खाने के लिए सिस्टम सेटिंग्स को कस्टमाइज़ करें।",
-    help: "आप मुझसे सिस्टम के किसी भी सेक्शन के बारे में पूछ सकते हैं। बस संबंधित बटन पर क्लिक करें।"
+    meetings: "कैलेंडर इंटीग्रेशन का उपयोग करके लीड के साथ मीटिंग शेड्यूल करें और प्रबंधित करें.",
+    deals: "बिक्री पाइपलाइन में विभिन्न चरणों के माध्यम से संभावित डील को ट्रैक करें.",
+    agents: "एडमिन के रूप में, आप अपनी सेल्स टीम के सदस्यों को प्रबंधित कर सकते हैं और लीड असाइन कर सकते हैं.",
+    settings: "अपने वर्कफ़्लो और प्राथमिकताओं से मेल खाने के लिए सिस्टम सेटिंग्स को कस्टमाइज़ करें.",
+    help: "आप मुझसे सिस्टम के किसी भी सेक्शन के बारे में पूछ सकते हैं। बस संबंधित बटन पर क्लिक करें."
   },
   es: {
     welcome: "¡Bienvenido al Sistema de Gestión de Leads! Fácilmente rastree, administre y convierta leads con nuestra plataforma optimizada diseñada para aumentar su eficiencia de ventas y crecimiento. Así es como se usa el sistema:",
@@ -86,15 +147,15 @@ const voiceMessages = {
     help: "Puede preguntarme sobre cualquier sección del sistema. Simplemente haga clic en el botón correspondiente."
   },
   fr: {
-    welcome: "Bienvenue dans le système de gestion des leads ! Suivez, gérez et convertissez facilement les leads avec notre plateforme rationalisée conçue pour améliorer votre efficacité commerciale et votre croissance. Voici comment utiliser le système:",
+    welcome: "Bienvenue dans le système de gestion des leads ! Suivez, gérez et convertissez facilement les leads avec notre plateforme rationalisée conçue para mejorar votre efficacité commerciale et votre croissance. Voici comment utiliser le système:",
     dashboard: "Le tableau de bord affiche vos principales métriques, y compris le nombre total de prospects, les conversions et les tâches à venir.",
-    leads: "Dans la section Prospects, vous pouvez gérer tous les clients potentiels, suivre les interactions et mettre à jour les statuts. Vous pouvez également importer et exporter des prospects, et initier directamente des appels y mensajes à vos prospects.",
+    leads: "Dans la section Prospects, vous pouvez gérer tous les clients potentiels, suivre les interactions et mettre à jour les statuts. Vous pouvez également importer et exporter des prospects, et initier directement des appels y mensajes à vos prospects.",
     tasks: "La section Tâches aide à organiser les relances et les activités importantes avec des rappels et des dates d'échéance.",
     meetings: "Planifiez et gérez des réunions avec des prospects en utilisant l'intégration du calendrier.",
     deals: "Suivez les affaires potentielles à travers les différentes étapes du pipeline de vente.",
     agents: "En tant qu'administrateur, vous pouvez gérer les membres de votre équipe commerciale et attribuer des prospects.",
-    settings: "Personnalisez les paramètres du système pour qu'ils correspondent à votre flux de travail et à vos préférences.",
-    help: "Vous pouvez me poser des questions sur n'importe quelle section du système. Il suffit de cliquer sur le bouton correspondant."
+    settings: "Personnalisez les paramètres du système para qu'ils correspondent à votre flux de travail et à vos préférences.",
+    help: "Vous pouvez me poser des questions sur n'importe quelle section du système. Il suffit de clic sur le bouton correspondant."
   },
   mr: {
     welcome: "लीड मॅनेजमेंट सिस्टममध्ये आपले स्वागत आहे! सहजपणे लीड्स ट्रॅक, व्यवस्थापित आणि रूपांतरित करा, आमच्या सुव्यवस्थित प्लॅटफॉर्मसह जे आपल्या विक्री कार्यक्षमता आणि वाढीसाठी डिझाइन केलेले आहे. सिस्टम कसे वापरायचे ते येथे आहे:",
@@ -110,45 +171,47 @@ const voiceMessages = {
 };
 
 export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
-  const { user, logout } = useAuth();
+  const { user: encryptedUser, logout } = useAuth();
   const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const isMobile = useIsMobile();
-  const agentName = localStorage.getItem('agentName');
   const [selectedLanguage, setSelectedLanguage] = useState<Language>('en');
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [currentMessage, setCurrentMessage] = useState('');
   const [voicesLoaded, setVoicesLoaded] = useState(false);
-  const [volume, setVolume] = useState(80); // Default volume (0-100)
+  const [volume, setVolume] = useState(80);
+  const [user, setUser] = useState<any>(null);
+  const [agentName, setAgentName] = useState<string>('');
+  const [loading, setLoading] = useState(true);
 
-  const adminId = localStorage.getItem('adminkey');
-  const agentId = localStorage.getItem('agentkey');
+  // Decrypt user data on component mount
+  useEffect(() => {
+    const decryptUserData = async () => {
+      try {
+        setLoading(true);
+        if (encryptedUser) {
+          const decrypted = await decryptUser(encryptedUser);
+          setUser(decrypted);
+          
+          // If this is an agent, decrypt the agent name from localStorage
+          if (decrypted.role === 'agent') {
+            const encryptedAgentName = localStorage.getItem('agentName');
+            if (encryptedAgentName) {
+              const decryptedAgentName = await decryptData(encryptedAgentName);
+              setAgentName(decryptedAgentName);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error decrypting user data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  // User details
-  const userName = user?.firstName || agentName || 'User';
-  const userEmail = user?.email || '';
-  const userInitial = userName.charAt(0).toUpperCase();
-  const userRole = user?.role === 'admin' ? 'Admin' : 'Agent';
-
-  // Toggle theme
-  const toggleTheme = () => {
-    setTheme(theme === 'dark' ? 'light' : 'dark');
-  };
-
-  // Menu items configuration
-  const menuItems = [
-    { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
-    { icon: FileText, label: 'Leads', path: '/leads' },
-    ...(user?.role === 'admin' ? [
-      { icon: Users, label: 'Agents', path: '/agents' },
-      { icon: BarChartBig, label: 'Assign Leads', path: '/assignLeads' }
-    ] : []),
-    { icon: FileText, label: 'Tasks', path: '/tasks' },
-    { icon: Calendar, label: 'Meetings', path: '/meetings' },
-    { icon: BarChartBig, label: 'Deals', path: '/deals' },
-    { icon: Settings, label: 'Settings', path: '/settings' }
-  ];
+    decryptUserData();
+  }, [encryptedUser]);
 
   // Load voices when component mounts
   useEffect(() => {
@@ -210,8 +273,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
     } else {
       preferredVoice = voices.find(voice => 
         voice.lang.startsWith(selectedLanguage) && 
-        voice.name.includes('Female')
-      ) || 
+        voice.name.includes('Female'
+      )) || 
       voices.find(voice => voice.lang.startsWith(selectedLanguage));
     }
     
@@ -278,6 +341,39 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
       `Information about ${section} is not available in ${selectedLanguage}`;
     speak(message);
   };
+
+  // User details (using decrypted data)
+  const userName = user?.firstName || agentName || 'User';
+  const userEmail = user?.email || '';
+  const userInitial = userName.charAt(0).toUpperCase();
+  const userRole = user?.role === 'admin' ? 'Admin' : 'Agent';
+
+  // Menu items configuration
+  const menuItems = [
+    { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
+    { icon: FileText, label: 'Leads', path: '/leads' },
+    ...(user?.role === 'admin' ? [
+      { icon: Users, label: 'Agents', path: '/agents' },
+      { icon: BarChartBig, label: 'Assign Leads', path: '/assignLeads' }
+    ] : []),
+    { icon: FileText, label: 'Tasks', path: '/tasks' },
+    { icon: Calendar, label: 'Meetings', path: '/meetings' },
+    { icon: BarChartBig, label: 'Deals', path: '/deals' },
+    { icon: Settings, label: 'Settings', path: '/settings' }
+  ];
+
+  // Toggle theme
+  const toggleTheme = () => {
+    setTheme(theme === 'dark' ? 'light' : 'dark');
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden">
@@ -373,12 +469,15 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
         {/* Top Header */}
         <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 h-16 flex items-center justify-between px-4 lg:px-6 shrink-0">
           <div className="flex items-center">
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="mr-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 lg:hidden"
-            >
-              <Menu size={20} />
-            </button>
+            {/* Hide hamburger button when navbar is present */}
+            {!isMobile && (
+              <button
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                className="mr-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 lg:hidden"
+              >
+                <Menu size={20} />
+              </button>
+            )}
             <h1 className="ml-0 text-lg font-semibold lg:text-xl dark:text-white">
               {userName}'s Workspace
             </h1>
@@ -518,7 +617,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                   </AvatarFallback>
                 </Avatar>
                 <span className="hidden md:inline text-sm font-medium dark:text-white">
-                  {userName} ({user.role.toLocaleUpperCase()})
+                  {userName} ({user?.role?.toUpperCase()})
                 </span>
               </Button>
               
@@ -529,17 +628,17 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                     <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{userEmail}</p>
                   </div>
                   <Separator className="dark:bg-gray-700" />
-                  <button
+                  {/* <button
                     onClick={() => navigate('/profile')}
                     className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                   >
                     Your Profile
-                  </button>
+                  </button> */}
                   <button
                     onClick={() => navigate('/settings')}
                     className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                   >
-                    Account Settings
+                    Profile Settings
                   </button>
                   <Separator className="dark:bg-gray-700" />
                   <button
@@ -703,7 +802,6 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
           </div>
         )}
       </div>
-      {/* <MeetingDetails/> */}
     </div>
   );
 };

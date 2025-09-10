@@ -6,7 +6,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/componen
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Mic, Send, X, UploadCloud, Trash2, Edit, Plus, Mail, Phone, MessageSquare, ChevronDown, Download,Bot } from 'lucide-react';
+import { Mic, Send, X, UploadCloud, Trash2, Edit, Plus, Mail, Phone, MessageSquare, ChevronDown, Download, Bot } from 'lucide-react';
 import { toast } from 'sonner';
 import { LeadForm } from '../leads/LeadForm';
 import { FileManager } from '@/components/common/FileManager';
@@ -21,6 +21,8 @@ import {
 } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Label } from '@radix-ui/react-label';
+
+const ENCRYPTION_KEY = 'a1b2c3d4e5f6g7h8a1b2c3d4e5f6g7h8';
 
 interface Message {
   id: string;
@@ -44,8 +46,8 @@ interface Message {
   command?: string;
 }
 
-
 interface Lead {
+  id?: string;
   RA?: string;
   Date?: string;
   Meeting_Date?: string;
@@ -70,7 +72,6 @@ interface Lead {
   Website?: string;
   Requirement?: string;
   createdAt: string;
-  // updatedAt: string;
   leadNumber?: number;
   scheduledCall?: string;
   isDeleted?: boolean;
@@ -82,6 +83,7 @@ interface Lead {
     meetingAttended?: boolean;
     responseReceived?: boolean;
   };
+  source?: string;
 }
 
 interface Agent {
@@ -105,6 +107,61 @@ const COMMAND_SUGGESTIONS = [
   'assign leads',
   'show assignments'
 ];
+
+async function decryptData(encryptedData: string): Promise<string> {
+  if (!encryptedData) return encryptedData;
+  
+  try {
+    const decoder = new TextDecoder();
+    const combined = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
+    
+    const iv = combined.slice(0, 12);
+    const data = combined.slice(12);
+    
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(ENCRYPTION_KEY),
+      { name: 'AES-GCM' },
+      false,
+      ['decrypt']
+    );
+    
+    const decrypted = await crypto.subtle.decrypt(
+      {
+        name: 'AES-GCM',
+        iv: iv
+      },
+      key,
+      data
+    );
+    
+    return decoder.decode(decrypted);
+  } catch (error) {
+    console.error('Decryption failed:', error);
+    return encryptedData;
+  }
+}
+
+async function decryptLead(lead: Lead): Promise<Lead> {
+  const decryptedLead = { ...lead };
+  
+  decryptedLead.RA = await decryptData(lead.RA || '');
+  decryptedLead.linkedin_url = await decryptData(lead.linkedin_url || '');
+  decryptedLead.first_name = await decryptData(lead.first_name || '');
+  decryptedLead.last_name = await decryptData(lead.last_name || '');
+  decryptedLead.company = await decryptData(lead.company || '');
+  decryptedLead.Industry = await decryptData(lead.Industry || '');
+  decryptedLead.job_title = await decryptData(lead.job_title || '');
+  decryptedLead.Email_ID = await decryptData(lead.Email_ID || '');
+  decryptedLead.Mobile_Number = await decryptData(lead.Mobile_Number || '');
+  decryptedLead.Website = await decryptData(lead.Website || '');
+  decryptedLead.RPC_link = await decryptData(lead.RPC_link || '');
+  decryptedLead.Requirement = await decryptData(lead.Requirement || '');
+  decryptedLead.Meeting_Takeaway = await decryptData(lead.Meeting_Takeaway || '');
+  decryptedLead.Comment = await decryptData(lead.Comment || '');
+  
+  return decryptedLead;
+}
 
 export const AIAssistant: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -152,12 +209,9 @@ export const AIAssistant: React.FC = () => {
   const [agentCount, setAgentCount] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  // console.log(leadCount,agentCount)
-  const agentLimit = parseInt(localStorage.getItem('agentLimit') || 0);
-  const leadLimit = parseInt(localStorage.getItem('leadLimit') || 0);
-  // console.log(agentCount,leadLimit)
+  const agentLimit = parseInt(localStorage.getItem('agentLimit') || '0');
+  const leadLimit = parseInt(localStorage.getItem('leadLimit') || '0');
 
-  // For Checking the count and Limit
   useEffect(() => {
     if (!adminId) {
       setError('Admin ID not found');
@@ -165,18 +219,14 @@ export const AIAssistant: React.FC = () => {
       return;
     }
 
-    // Reference to leads and agents in Firebase
     const leadsRef = ref(database, `users/${adminId}/leads`);
     const agentsRef = ref(database, `users/${adminId}/agents`);
 
-    // Fetch lead count
     const leadListener = onValue(leadsRef, (snapshot) => {
       try {
-        // console.log('[Leads] Snapshot:', snapshot.val());
         const leads = snapshot.val();
         const count = leads ? Object.keys(leads).length : 0;
         setLeadCount(count);
-        // console.log(`[Leads] Current count: ${count}`);
       } catch (err) {
         console.error('[Leads] Error:', err);
         setError('Failed to fetch leads');
@@ -186,41 +236,25 @@ export const AIAssistant: React.FC = () => {
       setError('Failed to listen for leads');
     });
 
-    // Fetch agent count
     const agentListener = onValue(agentsRef, (snapshot) => {
       try {
-        // console.log('[Agents] Snapshot:', snapshot.val());
         const agents = snapshot.val();
         const count = agents ? Object.keys(agents).length : 0;
         setAgentCount(count);
-        // console.log(`[Agents] Current count: ${count}`);
       } catch (err) {
-        // console.error('[Agents] Error:', err);
         setError('Failed to fetch agents');
       }
     }, (error) => {
-      // console.error('[Agents] Listener error:', error);
       setError('Failed to listen for agents');
     });
 
     setLoading(false);
 
-    // Cleanup listeners on unmount
     return () => {
-      leadListener();
-      agentListener();
+      off(leadsRef);
+      off(agentsRef);
     };
   }, [adminId]);
-
-  // Log the limits from localStorage
-  useEffect(() => {
-    const agentLimit = parseInt(localStorage.getItem('agentLimit') || 0);
-    const leadLimit = parseInt(localStorage.getItem('leadLimit') || 0);
-    console.log(`[Limits] Agent Limit: ${agentLimit}, Lead Limit: ${leadLimit}`);
-  }, []);
-
-
-
 
   useEffect(() => {
     if (!currentUser) return;
@@ -228,17 +262,26 @@ export const AIAssistant: React.FC = () => {
     const leadsRef = ref(database, `users/${currentUser}/leads`);
     const agentsRef = ref(database, `users/${currentUser}/agents`);
     
-    const leadsUnsubscribe = onValue(leadsRef, (snapshot) => {
+    const leadsUnsubscribe = onValue(leadsRef, async (snapshot) => {
       const leadsData = snapshot.val();
       const loadedLeads: Lead[] = [];
       
       if (leadsData) {
-        Object.keys(leadsData).forEach((key) => {
-          loadedLeads.push({
-            id: key,
-            ...leadsData[key]
-          });
-        });
+        for (const key of Object.keys(leadsData)) {
+          try {
+            const decryptedLead = await decryptLead({
+              id: key,
+              ...leadsData[key]
+            });
+            loadedLeads.push(decryptedLead);
+          } catch (error) {
+            console.error('Error decrypting lead:', error);
+            loadedLeads.push({
+              id: key,
+              ...leadsData[key]
+            });
+          }
+        }
       }
       
       setLeads(loadedLeads);
@@ -435,7 +478,7 @@ export const AIAssistant: React.FC = () => {
       type: 'dropdown',
       dropdown: {
         options: leads.map(lead => ({
-          label: `${lead.first_name} ${lead.last_name} (${lead.status})`,
+          label: `${lead.first_name} ${lead.last_name} (${lead.Meeting_Status || 'none'})`,
           value: lead.id || ''
         })),
         onSelect: (value) => {
@@ -467,7 +510,7 @@ export const AIAssistant: React.FC = () => {
       type: 'dropdown',
       dropdown: {
         options: leads.map(lead => ({
-          label: `${lead.first_name} ${lead.last_name} (${lead.status})`,
+          label: `${lead.first_name} ${lead.last_name} (${lead.Meeting_Status || 'none'})`,
           value: lead.id || ''
         })),
         onSelect: (value) => {
@@ -573,7 +616,7 @@ export const AIAssistant: React.FC = () => {
 
     const leadMessages = leads.slice(0, 3).map(lead => ({
       id: `list-${lead.id}`,
-      content: `${lead.first_name} ${lead.last_name} - ${lead.email} (${lead.status})`,
+      content: `${lead.first_name} ${lead.last_name} - ${lead.Email_ID} (${lead.Meeting_Status || 'none'})`,
       sender: 'ai',
       timestamp: new Date(),
       type: 'contact',
@@ -592,7 +635,8 @@ export const AIAssistant: React.FC = () => {
     }
 
     const statusCounts = leads.reduce((acc, lead) => {
-      acc[lead.status] = (acc[lead.status] || 0) + 1;
+      const status = lead.Meeting_Status || 'none';
+      acc[status] = (acc[status] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
 
@@ -624,7 +668,7 @@ export const AIAssistant: React.FC = () => {
       return;
     }
 
-    const statuses = Array.from(new Set(leads.map(lead => lead.status)));
+    const statuses = Array.from(new Set(leads.map(lead => lead.Meeting_Status || 'none')));
 
     const promptMessage: Message = {
       id: `ai-prompt-${Date.now()}`,
@@ -638,7 +682,7 @@ export const AIAssistant: React.FC = () => {
           value: status
         })),
         onSelect: (value) => {
-          const filteredLeads = leads.filter(lead => lead.status === value);
+          const filteredLeads = leads.filter(lead => (lead.Meeting_Status || 'none') === value);
           showFilteredLeads(filteredLeads, value);
         },
         placeholder: 'Select a status...'
@@ -663,7 +707,7 @@ export const AIAssistant: React.FC = () => {
 
     const leadMessages = filteredLeads.slice(0, 5).map(lead => ({
       id: `filtered-${lead.id}`,
-      content: `${lead.first_name} ${lead.last_name} - ${lead.email}`,
+      content: `${lead.first_name} ${lead.last_name} - ${lead.Email_ID}`,
       sender: 'ai',
       timestamp: new Date(),
       type: 'contact',
@@ -689,7 +733,7 @@ export const AIAssistant: React.FC = () => {
       type: 'dropdown',
       dropdown: {
         options: leads.map(lead => ({
-          label: `${lead.first_name} ${lead.last_name} (${lead.phone || lead.email})`,
+          label: `${lead.first_name} ${lead.last_name} (${lead.Mobile_Number || lead.Email_ID})`,
           value: lead.id || ''
         })),
         onSelect: (value) => {
@@ -715,7 +759,7 @@ export const AIAssistant: React.FC = () => {
 
     const options: Message[] = [];
 
-    if (lead.phone) {
+    if (lead.Mobile_Number) {
       options.push({
         id: `call-${lead.id}`,
         content: 'Call',
@@ -723,8 +767,8 @@ export const AIAssistant: React.FC = () => {
         timestamp: new Date(),
         type: 'suggestion',
         action: () => {
-          addMessage(`Calling ${lead.first_name} at ${lead.phone}`, true);
-          window.open(`tel:${lead.phone}`, '_blank');
+          addMessage(`Calling ${lead.first_name} at ${lead.Mobile_Number}`, true);
+          window.open(`tel:${lead.Mobile_Number}`, '_blank');
         }
       },
       {
@@ -735,13 +779,13 @@ export const AIAssistant: React.FC = () => {
         type: 'suggestion',
         action: () => {
           addMessage(`Opening WhatsApp chat with ${lead.first_name}`, true);
-          const cleanedPhone = lead.phone.replace(/\D/g, '');
+          const cleanedPhone = lead.Mobile_Number.replace(/\D/g, '');
           window.open(`https://wa.me/${cleanedPhone}`, '_blank');
         }
       });
     }
 
-    if (lead.email) {
+    if (lead.Email_ID) {
       options.push({
         id: `email-${lead.id}`,
         content: 'Email',
@@ -749,8 +793,8 @@ export const AIAssistant: React.FC = () => {
         timestamp: new Date(),
         type: 'suggestion',
         action: () => {
-          addMessage(`Emailing ${lead.first_name} at ${lead.email}`, true);
-          window.open(`mailto:${lead.email}`, '_blank');
+          addMessage(`Emailing ${lead.first_name} at ${lead.Email_ID}`, true);
+          window.open(`mailto:${lead.Email_ID}`, '_blank');
         }
       });
     }
@@ -879,8 +923,7 @@ export const AIAssistant: React.FC = () => {
       const newLead = {
         ...lead,
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        status: lead.status || 'new'
+        Meeting_Status: lead.Meeting_Status || 'new'
       };
 
       const leadsRef = ref(database, `users/${currentUser}/leads`);
@@ -904,8 +947,7 @@ export const AIAssistant: React.FC = () => {
 
     try {
       const leadUpdates = {
-        ...updatedLead,
-        updatedAt: new Date().toISOString()
+        ...updatedLead
       };
 
       await update(ref(database, `users/${currentUser}/leads/${updatedLead.id}`), leadUpdates);
@@ -946,7 +988,7 @@ export const AIAssistant: React.FC = () => {
   const showImportPreview = (leadsToImport: Lead[]) => {
     setPreviewData(leadsToImport);
     
-    const columns = ['first_name', 'last_name', 'email', 'phone', 'status'];
+    const columns = ['first_name', 'last_name', 'Email_ID', 'Mobile_Number', 'Meeting_Status'];
     
     const previewMessage: Message = {
       id: `preview-${Date.now()}`,
@@ -985,8 +1027,7 @@ export const AIAssistant: React.FC = () => {
         return set(newLeadRef, {
           ...lead,
           createdAt: importTime,
-          updatedAt: importTime,
-          status: lead.status || 'new'
+          Meeting_Status: lead.Meeting_Status || 'new'
         });
       });
 
@@ -1022,11 +1063,11 @@ export const AIAssistant: React.FC = () => {
   const parseExcelData = (data: any[]): Lead[] => {
     return data.map((row, index) => ({
       first_name: row['First Name'] || row['first_name'] || `Imported ${index + 1}`,
-      lastName: row['Last Name'] || row['lastName'] || '',
-      email: row['Email'] || row['email'] || '',
-      phone: row['Phone'] || row['phone'] || '',
-      status: row['Status'] || row['status'] || 'new'
-    })).filter(lead => lead.first_name && lead.email);
+      last_name: row['Last Name'] || row['last_name'] || '',
+      Email_ID: row['Email'] || row['Email_ID'] || '',
+      Mobile_Number: row['Phone'] || row['Mobile_Number'] || '',
+      Meeting_Status: row['Status'] || row['Meeting_Status'] || 'new'
+    })).filter(lead => lead.first_name && lead.Email_ID);
   };
 
   const toggleRecording = () => {
@@ -1136,13 +1177,13 @@ export const AIAssistant: React.FC = () => {
         <div className="flex flex-col">
           <p className="text-sm">{message.content}</p>
           <div className="flex gap-2 mt-2">
-            {lead.phone && (
+            {lead.Mobile_Number && (
               <>
                 <Button 
                   variant="ghost" 
                   size="sm" 
                   className="h-8 w-8 p-0"
-                  onClick={() => window.open(`tel:${lead.phone}`, '_blank')}
+                  onClick={() => window.open(`tel:${lead.Mobile_Number}`, '_blank')}
                   title="Call"
                 >
                   <Phone className="h-4 w-4" />
@@ -1152,7 +1193,7 @@ export const AIAssistant: React.FC = () => {
                   size="sm" 
                   className="h-8 w-8 p-0"
                   onClick={() => {
-                    const cleanedPhone = lead.phone.replace(/\D/g, '');
+                    const cleanedPhone = lead.Mobile_Number.replace(/\D/g, '');
                     window.open(`https://wa.me/${cleanedPhone}`, '_blank');
                   }}
                   title="WhatsApp"
@@ -1161,18 +1202,18 @@ export const AIAssistant: React.FC = () => {
                 </Button>
               </>
             )}
-            {lead.email && (
+            {lead.Email_ID && (
               <Button 
                 variant="ghost" 
                 size="sm" 
                 className="h-8 w-8 p-0"
-                onClick={() => window.open(`mailto:${lead.email}`, '_blank')}
+                onClick={() => window.open(`mailto:${lead.Email_ID}`, '_blank')}
                 title="Email"
               >
                 <Mail className="h-4 w-4" />
               </Button>
             )}
-            {!lead.phone && !lead.email && (
+            {!lead.Mobile_Number && !lead.Email_ID && (
               <span className="text-xs text-muted-foreground">No contact info</span>
             )}
           </div>
@@ -1198,7 +1239,7 @@ export const AIAssistant: React.FC = () => {
       {!isOpen && (
         <Button
           onClick={() => setIsOpen(true)}
-          className="fixed bottom-6 right-6 h-14 w-14 rounded-full neuro shadow-lg z-50"
+          className="fixed bottom-16 right-9 h-14 w-14 rounded-full neuro shadow-lg z-50"
         >
           <Bot className="h-14 w-14" />
         </Button>
@@ -1249,21 +1290,21 @@ export const AIAssistant: React.FC = () => {
           
           <CardFooter className="border-t p-3 gap-2 flex-col">
             {/* Suggestions dropdown */}
-            {showSuggestions && (
-              <div className="w-full bg-white border rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto">
-                {suggestions.map((suggestion, index) => (
-                  <div
-                    key={index}
-                    className={`p-2 hover:bg-gray-100 cursor-pointer text-sm ${
-                      index === selectedSuggestionIndex ? 'bg-gray-100' : ''
-                    }`}
-                    onClick={() => handleSuggestionClick(suggestion)}
-                  >
-                    {suggestion}
-                  </div>
-                ))}
-              </div>
-            )}
+           {showSuggestions && (
+  <div className="w-full bg-white dark:bg-gray-800 border rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto">
+    {suggestions.map((suggestion, index) => (
+      <div
+        key={index}
+        className={`p-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-800 dark:text-gray-200 ${
+          index === selectedSuggestionIndex ? 'bg-gray-100 dark:bg-gray-700' : ''
+        }`}
+        onClick={() => handleSuggestionClick(suggestion)}
+      >
+        {suggestion}
+      </div>
+    ))}
+  </div>
+)}
             
             <div className="flex w-full gap-2">
               <Button 
@@ -1321,10 +1362,10 @@ export const AIAssistant: React.FC = () => {
                   <TableRow key={index}>
                     <TableCell>{lead.first_name}</TableCell>
                     <TableCell>{lead.last_name}</TableCell>
-                    <TableCell>{lead.email || '-'}</TableCell>
-                    <TableCell>{lead.phone || '-'}</TableCell>
+                    <TableCell>{lead.Email_ID || '-'}</TableCell>
+                    <TableCell>{lead.Mobile_Number || '-'}</TableCell>
                     <TableCell>
-                      <Badge variant="outline">{lead.status || 'new'}</Badge>
+                      <Badge variant="outline">{lead.Meeting_Status || 'new'}</Badge>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -1364,14 +1405,17 @@ export const AIAssistant: React.FC = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Statuses</SelectItem>
-                    {Array.from(new Set(leads.map(lead => lead.status))).map(status => (
+                    {Array.from(new Set(leads.map(lead => lead.Meeting_Status || 'none'))).map(status => (
                       <SelectItem key={status} value={status}>{status}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <Button 
                   variant="outline"
-                  onClick={() => setIsLeadFormOpen(true)}
+                  onClick={() => {
+                    setEditingLead(null);
+                    setIsLeadFormOpen(true);
+                  }}
                 >
                   <Plus className="h-4 w-4 mr-2" /> Add Lead
                 </Button>
@@ -1383,6 +1427,7 @@ export const AIAssistant: React.FC = () => {
               <TableHeader className="bg-muted/50">
                 <TableRow>
                   <TableHead>Name</TableHead>
+                  <TableHead>Company</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Phone</TableHead>
                   <TableHead>Status</TableHead>
@@ -1391,14 +1436,18 @@ export const AIAssistant: React.FC = () => {
               </TableHeader>
               <TableBody>
                 {leads
-                  .filter(lead => statusFilter === 'all' || lead.status === statusFilter)
+                  .filter(lead => 
+                    statusFilter === 'all' || 
+                    (lead.Meeting_Status || 'none') === statusFilter
+                  )
                   .map((lead) => (
                   <TableRow key={lead.id}>
                     <TableCell>{lead.first_name} {lead.last_name}</TableCell>
-                    <TableCell>{lead.email}</TableCell>
-                    <TableCell>{lead.phone || '-'}</TableCell>
+                    <TableCell>{lead.company || '-'}</TableCell>
+                    <TableCell>{lead.Email_ID || '-'}</TableCell>
+                    <TableCell>{lead.Mobile_Number || '-'}</TableCell>
                     <TableCell>
-                      <Badge variant="outline">{lead.status}</Badge>
+                      <Badge variant="outline">{lead.Meeting_Status || 'none'}</Badge>
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
@@ -1442,7 +1491,11 @@ export const AIAssistant: React.FC = () => {
           </div>
           <div className="flex items-center justify-between">
             <div className="text-sm text-muted-foreground">
-              Showing {statusFilter === 'all' ? leads.length : leads.filter(lead => lead.status === statusFilter).length} of {leads.length} leads
+              Showing {
+                statusFilter === 'all' 
+                  ? leads.length 
+                  : leads.filter(lead => (lead.Meeting_Status || 'none') === statusFilter).length
+              } of {leads.length} leads
             </div>
             <Button 
               variant="outline"
@@ -1478,7 +1531,8 @@ export const AIAssistant: React.FC = () => {
               <TableBody>
                 {Object.entries(
                   leads.reduce((acc, lead) => {
-                    acc[lead.status] = (acc[lead.status] || 0) + 1;
+                    const status = lead.Meeting_Status || 'none';
+                    acc[status] = (acc[status] || 0) + 1;
                     return acc;
                   }, {} as Record<string, number>)
                 ).map(([status, count]) => (
@@ -1494,7 +1548,7 @@ export const AIAssistant: React.FC = () => {
                         size="sm" 
                         onClick={() => {
                           setShowStatusModal(false);
-                          const filteredLeads = leads.filter(lead => lead.status === status);
+                          const filteredLeads = leads.filter(lead => (lead.Meeting_Status || 'none') === status);
                           showFilteredLeads(filteredLeads, status);
                         }}
                       >
@@ -1513,7 +1567,8 @@ export const AIAssistant: React.FC = () => {
                 <div className="flex flex-col gap-1">
                   {Object.entries(
                     leads.reduce((acc, lead) => {
-                      acc[lead.status] = (acc[lead.status] || 0) + 1;
+                      const status = lead.Meeting_Status || 'none';
+                      acc[status] = (acc[status] || 0) + 1;
                       return acc;
                     }, {} as Record<string, number>)
                   ).map(([status, count]) => (
@@ -1548,6 +1603,7 @@ export const AIAssistant: React.FC = () => {
                   className="w-full"
                   onClick={() => {
                     setShowStatusModal(false);
+                    setEditingLead(null);
                     setIsLeadFormOpen(true);
                   }}
                 >

@@ -5,21 +5,143 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { 
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { User, Camera, Mail, Phone, Lock, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { database } from '../../firebase';
 import { ref, get, update } from 'firebase/database';
-import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+
+// Encryption configuration
+const ENCRYPTION_KEY = 'a1b2c3d4e5f6g7h8a1b2c3d4e5f6g7h8'; // 32 chars for AES-256
+const ENCRYPTION_IV_LENGTH = 12; // 12 bytes for AES-GCM IV
+
+// Country codes with flags and dial codes
+const COUNTRY_CODES = [
+  { code: 'US', dialCode: '+1', name: 'United States', flag: '🇺🇸' },
+  { code: 'GB', dialCode: '+44', name: 'United Kingdom', flag: '🇬🇧' },
+  { code: 'IN', dialCode: '+91', name: 'India', flag: '🇮🇳' },
+  { code: 'AU', dialCode: '+61', name: 'Australia', flag: '🇦🇺' },
+  { code: 'CA', dialCode: '+1', name: 'Canada', flag: '🇨🇦' },
+  { code: 'DE', dialCode: '+49', name: 'Germany', flag: '🇩🇪' },
+  { code: 'FR', dialCode: '+33', name: 'France', flag: '🇫🇷' },
+  { code: 'JP', dialCode: '+81', name: 'Japan', flag: '🇯🇵' },
+  { code: 'BR', dialCode: '+55', name: 'Brazil', flag: '🇧🇷' },
+  { code: 'CN', dialCode: '+86', name: 'China', flag: '🇨🇳' },
+  { code: 'RU', dialCode: '+7', name: 'Russia', flag: '🇷🇺' },
+  { code: 'MX', dialCode: '+52', name: 'Mexico', flag: '🇲🇽' },
+  { code: 'ZA', dialCode: '+27', name: 'South Africa', flag: '🇿🇦' },
+  { code: 'AE', dialCode: '+971', name: 'United Arab Emirates', flag: '🇦🇪' },
+  { code: 'SG', dialCode: '+65', name: 'Singapore', flag: '🇸🇬' },
+];
+
+// Improved decryption function
+async function decryptData(encryptedData: string): Promise<string> {
+  try {
+    if (!encryptedData || typeof encryptedData !== 'string') {
+      return encryptedData;
+    }
+
+    // Check if data looks like it might be encrypted
+    const mightBeEncrypted = encryptedData.length >= 24 && 
+                            /^[A-Za-z0-9+/=]+$/.test(encryptedData);
+    
+    if (!mightBeEncrypted) {
+      return encryptedData;
+    }
+
+    // Convert from base64
+    const binaryString = atob(encryptedData);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    // Extract IV and ciphertext
+    if (bytes.length < ENCRYPTION_IV_LENGTH) {
+      throw new Error('Data too short to contain IV');
+    }
+    const iv = bytes.slice(0, ENCRYPTION_IV_LENGTH);
+    const ciphertext = bytes.slice(ENCRYPTION_IV_LENGTH);
+
+    // Import key
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(ENCRYPTION_KEY),
+      { name: 'AES-GCM' },
+      false,
+      ['decrypt']
+    );
+
+    // Decrypt
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv },
+      key,
+      ciphertext
+    );
+
+    return new TextDecoder().decode(decrypted);
+  } catch (error) {
+    console.error('Decryption failed:', error);
+    return encryptedData; // Return original if decryption fails
+  }
+}
+
+// Decrypt agent data with all possible field variations
+async function decryptAgentData(data: any): Promise<any> {
+  if (!data) return data;
+
+  const result: any = { ...data };
+  const fields = [
+    'firstName', 'lastName', 'email', 'phone', 'bio', 'avatar', 'countryCode',
+    'name', 'encryptedName', 'encryptedFirstName', 'encryptedLastName',
+    'encryptedEmail', 'encryptedPhone', 'encryptedBio', 'encryptedAvatar', 'encryptedCountryCode'
+  ];
+
+  // Decrypt all possible fields
+  await Promise.all(fields.map(async (field) => {
+    if (data[field]) {
+      try {
+        const decrypted = await decryptData(data[field]);
+        if (decrypted !== data[field]) {
+          // Store in both formats (original and decrypted)
+          const cleanField = field.replace(/^encrypted/, '');
+          result[cleanField] = decrypted;
+          result[field] = decrypted;
+        }
+      } catch (error) {
+        console.error(`Error decrypting ${field}:`, error);
+      }
+    }
+  }));
+
+  // Handle name field if firstName/lastName not available
+  if (result.name && !result.firstName) {
+    const [firstName, ...lastName] = result.name.split(' ');
+    result.firstName = firstName || '';
+    result.lastName = lastName.join(' ') || '';
+  }
+
+  return result;
+}
 
 export const ProfileSettings: React.FC = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [isDecrypting, setIsDecrypting] = useState(false);
+  const [decryptionErrors, setDecryptionErrors] = useState<string[]>([]);
   
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
     email: '',
+    countryCode: '+1',
     phone: '',
     avatar: '/placeholder.svg',
     bio: '',
@@ -29,13 +151,14 @@ export const ProfileSettings: React.FC = () => {
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [phoneError, setPhoneError] = useState('');
 
   useEffect(() => {
     const fetchUserData = async () => {
       try {
         if (!user) return;
 
-        // Set basic user info from auth context
+        // Start with auth context data
         setFormData(prev => ({
           ...prev,
           firstName: user.firstName || '',
@@ -43,63 +166,73 @@ export const ProfileSettings: React.FC = () => {
           email: user.email || ''
         }));
 
-        // Fetch additional profile data from database
-        let userRef;
         const adminId = localStorage.getItem('adminkey');
         const agentId = localStorage.getItem('agentkey');
+        const errors: string[] = [];
 
         if (user.role === 'admin') {
-          // Original admin code remains unchanged
-          userRef = ref(database, `users/${user.id}/usersdetails`);
-        } else if (user.role === 'agent' && adminId) {
-          // Enhanced agent handling
-          const agentMainRef = ref(database, `users/${adminId}/agents/${user.id}`);
-          const agentDetailsRef = ref(database, `users/${adminId}/agents/${user.id}/usersdetails`);
-          
-          const [agentSnapshot, detailsSnapshot] = await Promise.all([
-            get(agentMainRef),
-            get(agentDetailsRef)
-          ]);
-
-          if (agentSnapshot.exists()) {
-            const agentData = agentSnapshot.val();
-            const nameParts = agentData.name?.split(' ') || [];
-            setFormData(prev => ({
-              ...prev,
-              firstName: nameParts[0] || '',
-              lastName: nameParts.slice(1).join(' ') || '',
-              phone: agentData.phone || '',
-              email: agentData.email || user.email || ''
-            }));
-          }
-
-          if (detailsSnapshot?.exists()) {
-            const detailsData = detailsSnapshot.val();
-            setFormData(prev => ({
-              ...prev,
-              avatar: detailsData.avatar || '/placeholder.svg',
-              bio: detailsData.bio || '',
-              phone: detailsData.phone || prev.phone
-            }));
-          }
-          return;
-        }
-
-        // Original admin data fetching
-        if (userRef) {
+          // Admin path - no encryption
+          const userRef = ref(database, `users/${user.id}/usersdetails`);
           const snapshot = await get(userRef);
+          
           if (snapshot.exists()) {
             const userData = snapshot.val();
             setFormData(prev => ({
               ...prev,
-              phone: userData.phone || '',
-              avatar: userData.avatar || '/placeholder.svg',
-              bio: userData.bio || ''
+              phone: userData.phone || prev.phone,
+              countryCode: userData.countryCode || prev.countryCode,
+              avatar: userData.avatar || prev.avatar,
+              bio: userData.bio || prev.bio
             }));
+          }
+        } else if (user.role === 'agent' && adminId) {
+          // Agent path - needs decryption
+          setIsDecrypting(true);
+          setDecryptionErrors([]);
+          
+          try {
+            const [agentSnapshot, detailsSnapshot] = await Promise.all([
+              get(ref(database, `users/${adminId}/agents/${user.id}`)),
+              get(ref(database, `users/${adminId}/agents/${user.id}/usersdetails`))
+            ]);
+
+            let agentData = {};
+            let detailsData = {};
+
+            if (agentSnapshot.exists()) {
+              agentData = await decryptAgentData(agentSnapshot.val());
+            }
+
+            if (detailsSnapshot?.exists()) {
+              detailsData = await decryptAgentData(detailsSnapshot.val());
+            }
+
+            // Merge data with details taking precedence
+            const mergedData = { ...agentData, ...detailsData };
+
+            setFormData(prev => ({
+              ...prev,
+              firstName: mergedData.firstName || prev.firstName,
+              lastName: mergedData.lastName || prev.lastName,
+              email: mergedData.email || prev.email,
+              countryCode: mergedData.countryCode || prev.countryCode,
+              phone: mergedData.phone || prev.phone,
+              avatar: mergedData.avatar || prev.avatar,
+              bio: mergedData.bio || prev.bio
+            }));
+
+          } catch (error) {
+            console.error('Decryption error:', error);
+            errors.push('Failed to decrypt some profile data');
+          } finally {
+            setIsDecrypting(false);
+            if (errors.length > 0) {
+              setDecryptionErrors(errors);
+            }
           }
         }
       } catch (error) {
-        console.error('Error fetching user data:', error);
+        console.error('Error loading profile:', error);
         toast.error('Failed to load profile data');
       } finally {
         setLoading(false);
@@ -109,12 +242,54 @@ export const ProfileSettings: React.FC = () => {
     fetchUserData();
   }, [user]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData({
-      ...formData,
-      [name]: value,
-    });
+  // Encryption function for saving data
+  const encryptData = async (data: string): Promise<string> => {
+    if (!data) return data;
+    
+    try {
+      const iv = crypto.getRandomValues(new Uint8Array(ENCRYPTION_IV_LENGTH));
+      const key = await crypto.subtle.importKey(
+        'raw',
+        new TextEncoder().encode(ENCRYPTION_KEY),
+        { name: 'AES-GCM' },
+        false,
+        ['encrypt']
+      );
+      
+      const encrypted = await crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv },
+        key,
+        new TextEncoder().encode(data)
+      );
+      
+      // Combine IV and encrypted data
+      const combined = new Uint8Array([...iv, ...new Uint8Array(encrypted)]);
+      return btoa(String.fromCharCode(...combined));
+    } catch (error) {
+      console.error('Encryption failed:', error);
+      return data;
+    }
+  };
+
+  // Validate phone number format
+  const validatePhoneNumber = (phone: string): boolean => {
+    // Remove any non-digit characters
+    const cleanedPhone = phone.replace(/\D/g, '');
+    
+    // Check if it's exactly 10 digits
+    if (cleanedPhone.length !== 10) {
+      setPhoneError('Phone number must be exactly 10 digits');
+      return false;
+    }
+    
+    // Check if it starts with a valid digit (not 0)
+    if (cleanedPhone.startsWith('0')) {
+      setPhoneError('Phone number cannot start with 0');
+      return false;
+    }
+    
+    setPhoneError('');
+    return true;
   };
 
   const handleSave = async () => {
@@ -125,51 +300,92 @@ export const ProfileSettings: React.FC = () => {
       return;
     }
 
+    // Validate phone number if provided
+    if (formData.phone && !validatePhoneNumber(formData.phone)) {
+      toast.error('Please enter a valid 10-digit phone number');
+      return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (formData.email && !emailRegex.test(formData.email)) {
+      toast.error('Please enter a valid email address');
+      return;
+    }
+
     try {
       setLoading(true);
-      let updates: any = {
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        phone: formData.phone,
-        bio: formData.bio,
-        email: formData.email
-      };
-
-      // Handle avatar upload
-      if (avatarFile) {
-        const storage = getStorage();
-        const fileRef = storageRef(storage, `avatars/${user.id}/${avatarFile.name}`);
-        await uploadBytes(fileRef, avatarFile);
-        const downloadURL = await getDownloadURL(fileRef);
-        updates.avatar = downloadURL;
-      }
-
-      // Determine the correct path based on user role
-      let updatePath;
       const adminId = localStorage.getItem('adminkey');
 
-      if (user.role === 'admin') {
-        // Original admin update logic
-        updatePath = `users/${user.id}/usersdetails`;
-      } else if (user.role === 'agent' && adminId) {
-        // Enhanced agent update logic
-        updatePath = `users/${adminId}/agents/${user.id}/usersdetails`;
+      // Handle avatar upload - store as base64 in Realtime Database
+      let avatarUrl = formData.avatar;
+      if (avatarFile) {
+        // Validate file type
+        const validImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+        if (!validImageTypes.includes(avatarFile.type)) {
+          toast.error('Please select a valid image file (JPEG, JPG, PNG, GIF, WEBP)');
+          setLoading(false);
+          return;
+        }
+
+        // Convert to base64 for storage in Realtime Database
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          if (e.target?.result) {
+            avatarUrl = e.target.result as string;
+          }
+        };
+        reader.readAsDataURL(avatarFile);
         
-        // Update main agent data
-        await update(ref(database, `users/${adminId}/agents/${user.id}`), {
-          name: `${formData.firstName} ${formData.lastName}`.trim(),
-          phone: formData.phone,
-          email: formData.email
-        });
-      } else {
-        throw new Error('Invalid user role or missing admin ID');
+        // Wait for the file to be read
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
 
-      // Update the database
-      await update(ref(database, updatePath), updates);
+      if (user.role === 'admin') {
+        // Admin update (unencrypted)
+        await update(ref(database, `users/${user.id}/usersdetails`), {
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          phone: formData.phone,
+          countryCode: formData.countryCode,
+          bio: formData.bio,
+          email: formData.email,
+          avatar: avatarUrl
+        });
+      } else if (user.role === 'agent' && adminId) {
+        // Agent update (encrypted)
+        const encryptedUpdates = {
+          firstName: await encryptData(formData.firstName),
+          lastName: await encryptData(formData.lastName),
+          email: await encryptData(formData.email),
+          countryCode: await encryptData(formData.countryCode),
+          phone: await encryptData(formData.phone),
+          bio: await encryptData(formData.bio),
+          avatar: await encryptData(avatarUrl),
+          name: await encryptData(`${formData.firstName} ${formData.lastName}`.trim())
+        };
+
+        // Prepare all updates
+        const updates: Record<string, any> = {
+          [`users/${adminId}/agents/${user.id}/encryptedName`]: encryptedUpdates.name,
+          [`users/${adminId}/agents/${user.id}/encryptedEmail`]: encryptedUpdates.email,
+          [`users/${adminId}/agents/${user.id}/encryptedPhone`]: encryptedUpdates.phone,
+          [`users/${adminId}/agents/${user.id}/encryptedCountryCode`]: encryptedUpdates.countryCode,
+          [`users/${adminId}/agents/${user.id}/usersdetails`]: {
+            encryptedFirstName: encryptedUpdates.firstName,
+            encryptedLastName: encryptedUpdates.lastName,
+            encryptedEmail: encryptedUpdates.email,
+            encryptedPhone: encryptedUpdates.phone,
+            encryptedCountryCode: encryptedUpdates.countryCode,
+            encryptedBio: encryptedUpdates.bio,
+            encryptedAvatar: encryptedUpdates.avatar
+          }
+        };
+
+        await update(ref(database), updates);
+      }
+
       toast.success('Profile updated successfully');
-      
-      // Clear password fields
       setFormData(prev => ({ ...prev, password: '', confirmPassword: '' }));
     } catch (error) {
       console.error('Error updating profile:', error);
@@ -179,18 +395,58 @@ export const ProfileSettings: React.FC = () => {
     }
   };
 
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    
+    if (name === 'phone') {
+      // Only allow digits and limit to 10 characters
+      const cleanedValue = value.replace(/\D/g, '').slice(0, 10);
+      setFormData(prev => ({
+        ...prev,
+        [name]: cleanedValue
+      }));
+      
+      // Validate as user types
+      if (cleanedValue) {
+        validatePhoneNumber(cleanedValue);
+      } else {
+        setPhoneError('');
+      }
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [name]: value
+      }));
+    }
+  };
+
+  const handleCountryCodeChange = (value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      countryCode: value
+    }));
+  };
+
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
+    if (e.target.files?.[0]) {
       const file = e.target.files[0];
+      
+      // Validate file type
+      const validImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+      if (!validImageTypes.includes(file.type)) {
+        toast.error('Please select a valid image file (JPEG, JPG, PNG, GIF, WEBP)');
+        return;
+      }
+      
       setAvatarFile(file);
       
       const reader = new FileReader();
       reader.onload = (event) => {
         if (event.target?.result) {
-          setFormData({
-            ...formData,
+          setFormData(prev => ({
+            ...prev,
             avatar: event.target.result as string
-          });
+          }));
         }
       };
       reader.readAsDataURL(file);
@@ -205,8 +461,18 @@ export const ProfileSettings: React.FC = () => {
     }
   };
 
-  if (loading && !formData.firstName) {
-    return <div className="flex justify-center items-center h-64">Loading profile...</div>;
+  if (loading || isDecrypting) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-2">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <p>{isDecrypting ? 'Decrypting profile data...' : 'Loading profile...'}</p>
+        {decryptionErrors.length > 0 && (
+          <div className="text-yellow-600 text-sm mt-2">
+            Note: Some data may not display correctly
+          </div>
+        )}
+      </div>
+    );
   }
 
   return (
@@ -218,6 +484,24 @@ export const ProfileSettings: React.FC = () => {
         </CardDescription>
       </CardHeader>
       
+      {decryptionErrors.length > 0 && (
+        <div className="mx-6 mb-4 bg-yellow-50 border-l-4 border-yellow-400 p-4">
+          <div className="flex items-start">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-yellow-800">Data Notice</h3>
+              <div className="mt-2 text-sm text-yellow-700">
+                <p>Some profile data couldn't be decrypted properly. Contact support if information appears incorrect.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <CardContent className="space-y-6">
         <div className="flex flex-col md:flex-row md:items-center gap-6">
           <div className="flex flex-col items-center space-y-2">
@@ -235,11 +519,11 @@ export const ProfileSettings: React.FC = () => {
             <input
               id="avatar-upload"
               type="file"
-              accept="image/*"
+              accept="image/jpeg, image/jpg, image/png, image/gif, image/webp"
               onChange={handleAvatarChange}
               className="hidden"
             />
-            <span className="text-xs text-muted-foreground">Click to change</span>
+            <span className="text-xs text-muted-foreground">Click to change (JPEG, JPG, PNG, GIF, WEBP)</span>
           </div>
           
           <div className="space-y-4 flex-1">
@@ -285,6 +569,7 @@ export const ProfileSettings: React.FC = () => {
                 value={formData.email}
                 onChange={handleChange}
                 className="neuro-inset focus:shadow-none"
+                placeholder="your.email@example.com"
               />
             </div>
             
@@ -293,13 +578,45 @@ export const ProfileSettings: React.FC = () => {
                 <Phone className="h-4 w-4" />
                 Phone Number
               </Label>
-              <Input 
-                id="phone"
-                name="phone"
-                value={formData.phone}
-                onChange={handleChange}
-                className="neuro-inset focus:shadow-none"
-              />
+              <div className="flex gap-2">
+                <Select value={formData.countryCode} onValueChange={handleCountryCodeChange}>
+                  <SelectTrigger className="w-28 neuro-inset">
+                    <SelectValue placeholder="Code" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-60">
+                    {COUNTRY_CODES.map((country) => (
+                      <SelectItem key={country.code} value={country.dialCode}>
+                        <span className="flex items-center gap-2">
+                          <span>{country.flag}</span>
+                          <span>{country.dialCode}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="flex-1 relative">
+                  <Input 
+                    id="phone"
+                    name="phone"
+                    value={formData.phone}
+                    onChange={handleChange}
+                    className="neuro-inset focus:shadow-none"
+                    placeholder="1234567890"
+                    maxLength={10}
+                  />
+                  {formData.phone && (
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                      {formData.phone.length}/10
+                    </div>
+                  )}
+                </div>
+              </div>
+              {phoneError && (
+                <p className="text-sm text-red-500">{phoneError}</p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Enter 10-digit phone number without country code
+              </p>
             </div>
           </div>
         </div>
@@ -313,6 +630,7 @@ export const ProfileSettings: React.FC = () => {
             onChange={handleChange}
             rows={4}
             className="w-full neuro-inset p-3 rounded-md focus:shadow-none focus:outline-none resize-none"
+            placeholder="Tell us about yourself and your professional background..."
           />
         </div>
 
@@ -373,7 +691,7 @@ export const ProfileSettings: React.FC = () => {
         <Button 
           onClick={handleSave} 
           className="neuro hover:shadow-none transition-all duration-300"
-          disabled={loading}
+          disabled={loading || isDecrypting || !!phoneError}
         >
           {loading ? 'Saving...' : 'Save Changes'}
         </Button>

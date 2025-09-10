@@ -15,20 +15,20 @@ export const HelpFAQs: React.FC = () => {
     },
     {
       question: "How do I assign a lead to an agent?",
-      answer: "You can assign a lead to an agent by selecting a lead from the leads table, clicking on the 'Actions' dropdown, and selecting 'Assign to Agent'. You'll then be able to select an agent from the dropdown list."
+      answer: "You can assign leads to an agent by navigating to the 'Assign Lead' section. There, you can specify a lead range — from a specific start ID to an end ID — and assign that entire range to a selected agent."
     },
     {
-      question: "How do I track deal progress?",
-      answer: "You can track deal progress on the Deals page. Each deal card shows the current status and progress. Click on a deal to view detailed information and update its status."
+      question: "How do I track client progress?",
+      answer: "You can track client progress on the client page. Each client card shows the current status and progress. Click on a client to view detailed information and update its status."
     },
     {
       question: "How do I schedule a meeting with a lead?",
       answer: "Navigate to the Meetings page and click 'Schedule Meeting'. Select the lead, date, time, and other relevant details in the form. Once saved, the meeting will appear in your calendar."
     },
-    {
-      question: "How do I customize my notification preferences?",
-      answer: "Go to Settings > Notifications to customize which notifications you receive and how you receive them. You can choose between email, in-app, and SMS notifications for different events."
-    },
+    // {
+    //   question: "How do I customize my notification preferences?",
+    //   answer: "Go to Settings > Notifications to customize which notifications you receive and how you receive them. You can choose between email, in-app, and SMS notifications for different events."
+    // },
     {
       question: "How do I export lead data?",
       answer: "On the Leads page, click on the 'Export' button to download your lead data as a CSV or Excel file. You can filter the data before exporting to include only specific leads."

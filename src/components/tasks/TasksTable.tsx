@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Edit, Trash2, Plus, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Undo, Clock, CheckCircle, AlertCircle, Settings } from 'lucide-react';
+import { Edit, Trash2, Plus, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Undo, Clock, CheckCircle, AlertCircle, Settings, BarChart2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,6 +20,10 @@ import {
   DialogDescription,
   DialogFooter
 } from '@/components/ui/dialog';
+import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd';
+
+// Encryption key - should match the one used in AddTaskForm
+const ENCRYPTION_KEY = 'a1b2c3d4e5f6g7h8a1b2c3d4e5f6g7h8'; // 32 chars for AES-256
 
 interface Agent {
   id: string;
@@ -30,19 +34,86 @@ interface Agent {
   lastAssigned?: string;
 }
 
+// Analytics widget types
+type WidgetType = 'priorityDistribution' | 'completionRate';
+
+interface AnalyticsWidget {
+  id: string;
+  type: WidgetType;
+  title: string;
+  colSpan?: number;
+}
+
+// Helper function to decrypt data
+async function decryptData(encryptedData: string): Promise<string> {
+  if (!encryptedData) return encryptedData;
+  
+  try {
+    const decoder = new TextDecoder();
+    const combined = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
+    
+    const iv = combined.slice(0, 12);
+    const data = combined.slice(12);
+    
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(ENCRYPTION_KEY),
+      { name: 'AES-GCM' },
+      false,
+      ['decrypt']
+    );
+    
+    const decrypted = await crypto.subtle.decrypt(
+      {
+        name: 'AES-GCM',
+        iv: iv
+      },
+      key,
+      data
+    );
+    
+    return decoder.decode(decrypted);
+  } catch (error) {
+    console.error('Decryption failed:', error);
+    return encryptedData; // Return original if decryption fails
+  }
+}
+
+// Function to decrypt task values
+async function decryptTask(task: Task): Promise<Task> {
+  const decryptedTask = { ...task };
+  
+  // Decrypt each encrypted field
+  decryptedTask.title = await decryptData(task.title);
+  decryptedTask.description = await decryptData(task.description);
+  decryptedTask.agentName = await decryptData(task.agentName);
+  decryptedTask.startDate = await decryptData(task.startDate);
+  decryptedTask.endDate = await decryptData(task.endDate);
+  decryptedTask.priority = await decryptData(task.priority) as 'low' | 'medium' | 'high';
+  decryptedTask.status = await decryptData(task.status) as 'pending' | 'in_progress' | 'completed';
+  
+  return decryptedTask;
+}
+
 export const TasksTable: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [decryptedTasks, setDecryptedTasks] = useState<Task[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [isAddingTask, setIsAddingTask] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [backupTasks, setBackupTasks] = useState<Task[]>([]);
+  const [decryptedBackupTasks, setDecryptedBackupTasks] = useState<Task[]>([]);
   const [showBackup, setShowBackup] = useState(false);
   const [showAutomationSettings, setShowAutomationSettings] = useState(false);
+  const [showAnalyticsPanel, setShowAnalyticsPanel] = useState(false);
+  const [analyticsWidgets, setAnalyticsWidgets] = useState<AnalyticsWidget[]>([]);
+  const [availableWidgets, setAvailableWidgets] = useState<WidgetType[]>([]);
   const isMobile = useIsMobile();
   const adminId = localStorage.getItem('adminkey');
   const agentId = localStorage.getItem('agentkey');
   const { user, isAdmin } = useAuth();
+  const [isDecrypting, setIsDecrypting] = useState(false);
 
   // Automation settings state
   const [automationSettings, setAutomationSettings] = useState({
@@ -58,48 +129,84 @@ export const TasksTable: React.FC = () => {
   const [currentBackupPage, setCurrentBackupPage] = useState(1);
   const tasksPerPage = 10;
 
-  // Fetch tasks from Firebase based on user role
-useEffect(() => {
-  let tasksRef;
-  
-  if (isAdmin && adminId) {
-    // Admin sees all tasks
-    tasksRef = ref(database, `users/${adminId}/tasks`);
-  } else if (agentId && adminId) {
-    // Agent sees only their assigned tasks
-    tasksRef = ref(database, `users/${adminId}/tasks`);
-    // We'll filter these tasks later to only show those assigned to this agent
-  } else {
-    return;
-  }
-
-  const fetchTasks = () => {
-    onValue(tasksRef, (snapshot) => {
-      const tasksData: Task[] = [];
-      snapshot.forEach((childSnapshot) => {
-        const task = {
-          id: childSnapshot.key || '',
-          ...childSnapshot.val()
-        };
-        
-        // If this is an agent view, only include tasks assigned to them
-        if (!isAdmin && task.agentId !== agentId) return;
-        
-        tasksData.push(task);
-      });
-      setTasks(tasksData);
-      setCurrentPage(1); // Reset to first page when tasks change
-    });
-  };
-
-  fetchTasks();
-
-  return () => {
-    if (tasksRef) {
-      off(tasksRef);
+  // Initialize analytics widgets
+  useEffect(() => {
+    const savedWidgets = localStorage.getItem('taskAnalyticsWidgets');
+    if (savedWidgets) {
+      setAnalyticsWidgets(JSON.parse(savedWidgets));
+    } else {
+      // Default widgets
+      setAnalyticsWidgets([
+        { id: '1', type: 'priorityDistribution', title: 'Priority Distribution' },
+        { id: '2', type: 'completionRate', title: 'Completion Rate' }
+      ]);
     }
-  };
-}, [isAdmin, adminId, agentId]);
+
+    // All possible widget types
+    setAvailableWidgets(['priorityDistribution', 'completionRate']);
+  }, []);
+
+  // Save analytics widgets to localStorage
+  useEffect(() => {
+    localStorage.setItem('taskAnalyticsWidgets', JSON.stringify(analyticsWidgets));
+  }, [analyticsWidgets]);
+
+  // Fetch tasks from Firebase based on user role
+  useEffect(() => {
+    let tasksRef;
+    
+    if (isAdmin && adminId) {
+      // Admin sees all tasks
+      tasksRef = ref(database, `users/${adminId}/tasks`);
+    } else if (agentId && adminId) {
+      // Agent sees only their assigned tasks
+      tasksRef = ref(database, `users/${adminId}/tasks`);
+      // We'll filter these tasks later to only show those assigned to this agent
+    } else {
+      return;
+    }
+
+    const fetchTasks = () => {
+      onValue(tasksRef, async (snapshot) => {
+        const tasksData: Task[] = [];
+        snapshot.forEach((childSnapshot) => {
+          const task = {
+            id: childSnapshot.key || '',
+            ...childSnapshot.val()
+          };
+          
+          // If this is an agent view, only include tasks assigned to them
+          if (!isAdmin && task.agentId !== agentId) return;
+          
+          tasksData.push(task);
+        });
+        
+        setTasks(tasksData);
+        setIsDecrypting(true);
+        
+        // Decrypt all tasks for display
+        try {
+          const decrypted = await Promise.all(tasksData.map(task => decryptTask(task)));
+          setDecryptedTasks(decrypted);
+        } catch (error) {
+          console.error('Error decrypting tasks:', error);
+          setDecryptedTasks(tasksData); // Fallback to encrypted data
+        } finally {
+          setIsDecrypting(false);
+        }
+        
+        setCurrentPage(1); // Reset to first page when tasks change
+      });
+    };
+
+    fetchTasks();
+
+    return () => {
+      if (tasksRef) {
+        off(tasksRef);
+      }
+    };
+  }, [isAdmin, adminId, agentId]);
 
   // Fetch backup tasks
   useEffect(() => {
@@ -108,7 +215,7 @@ useEffect(() => {
     const backupRef = ref(database, `users/${adminId}/backups/tasks`);
     
     const fetchBackupTasks = () => {
-      onValue(backupRef, (snapshot) => {
+      onValue(backupRef, async (snapshot) => {
         const backupData: Task[] = [];
         snapshot.forEach((childSnapshot) => {
           backupData.push({
@@ -116,7 +223,17 @@ useEffect(() => {
             ...childSnapshot.val()
           });
         });
+        
         setBackupTasks(backupData);
+        
+        // Decrypt backup tasks for display
+        try {
+          const decrypted = await Promise.all(backupData.map(task => decryptTask(task)));
+          setDecryptedBackupTasks(decrypted);
+        } catch (error) {
+          console.error('Error decrypting backup tasks:', error);
+          setDecryptedBackupTasks(backupData); // Fallback to encrypted data
+        }
       });
     };
 
@@ -213,7 +330,6 @@ useEffect(() => {
           if (Object.keys(updates).length > 0) {
             await update(ref(database), updates);
             console.log(`Automatically cleaned up ${tasksToDelete.length} old tasks`);
-            
           }
         }
       } catch (error) {
@@ -233,53 +349,53 @@ useEffect(() => {
   // Automatically update task statuses based on dates
   useEffect(() => {
     if (!automationSettings.autoStatusUpdate || !adminId) return;
-// In the automatic status updates effect, remove the overdue logic
-const updateTaskStatuses = async () => {
-  try {
-    const now = new Date();
-    const today = format(now, 'yyyy-MM-dd');
-    
-    const tasksRef = ref(database, `users/${adminId}/tasks`);
-    const snapshot = await get(tasksRef);
 
-    if (snapshot.exists()) {
-      const updates: Record<string, any> = {};
-      
-      snapshot.forEach(childSnapshot => {
-        const task = childSnapshot.val();
-        const taskId = childSnapshot.key;
+    const updateTaskStatuses = async () => {
+      try {
+        const now = new Date();
+        const today = format(now, 'yyyy-MM-dd');
         
-        // Skip if task is already completed
-        if (task.status === 'completed') return;
-        
-        // Update tasks that should be in progress today
-        if (task.startDate === today && task.status === 'pending') {
-          updates[`users/${adminId}/tasks/${taskId}/status`] = 'in_progress';
+        const tasksRef = ref(database, `users/${adminId}/tasks`);
+        const snapshot = await get(tasksRef);
+
+        if (snapshot.exists()) {
+          const updates: Record<string, any> = {};
+          
+          snapshot.forEach(childSnapshot => {
+            const task = childSnapshot.val();
+            const taskId = childSnapshot.key;
+            
+            // Skip if task is already completed
+            if (task.status === 'completed') return;
+            
+            // Update tasks that should be in progress today
+            if (task.startDate === today && task.status === 'pending') {
+              updates[`users/${adminId}/tasks/${taskId}/status`] = 'in_progress';
+            }
+            
+            // Notify for tasks due soon (within 1 day)
+            if (automationSettings.notifyDueSoon && 
+                differenceInDays(parseISO(task.endDate), now) <= 1 && 
+                task.status === 'in_progress') {
+              updates[`users/${adminId}/notifications/${taskId}_due_soon`] = {
+                type: 'task-due-soon',
+                taskId,
+                title: `Task Due Soon: ${task.title}`,
+                message: `The task "${task.title}" is due soon`,
+                timestamp: new Date().toISOString(),
+                read: false
+              };
+            }
+          });
+          
+          if (Object.keys(updates).length > 0) {
+            await update(ref(database), updates);
+          }
         }
-        
-        // Notify for tasks due soon (within 1 day)
-        if (automationSettings.notifyDueSoon && 
-            differenceInDays(parseISO(task.endDate), now) <= 1 && 
-            task.status === 'in_progress') {
-          updates[`users/${adminId}/notifications/${taskId}_due_soon`] = {
-            type: 'task-due-soon',
-            taskId,
-            title: `Task Due Soon: ${task.title}`,
-            message: `The task "${task.title}" is due soon`,
-            timestamp: new Date().toISOString(),
-            read: false
-          };
-        }
-      });
-      
-      if (Object.keys(updates).length > 0) {
-        await update(ref(database), updates);
+      } catch (error) {
+        console.error('Error during automatic status update:', error);
       }
-    }
-  } catch (error) {
-    console.error('Error during automatic status update:', error);
-  }
-};
+    };
 
     // Run status updates every hour
     const statusUpdateInterval = setInterval(updateTaskStatuses, 60 * 60 * 1000);
@@ -343,25 +459,23 @@ const updateTaskStatuses = async () => {
   }, [adminId, automationSettings.autoAssignTasks, getLeastBusyAgent]);
 
   // Filter tasks based on search term
-  const filteredTasks = tasks.filter(task => {
+  const filteredTasks = decryptedTasks.filter(task => {
     return task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
            (task.agentName && task.agentName.toLowerCase().includes(searchTerm.toLowerCase()));
   });
 
-  const filteredBackupTasks = backupTasks.filter(task => {
+  const filteredBackupTasks = decryptedBackupTasks.filter(task => {
     return task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
            (task.agentName && task.agentName.toLowerCase().includes(searchTerm.toLowerCase()));
   });
 
   // Calculate task statistics
-// Update the taskStats calculation to match the form statuses
-const taskStats = {
-  total: tasks.length,
-  completed: tasks.filter(t => t.status === 'completed').length,
-  inProgress: tasks.filter(t => t.status === 'in_progress').length,
-  pending: tasks.filter(t => t.status === 'pending').length
-  // Removed the overdue count since we're not using it anymore
-};
+  const taskStats = {
+    total: decryptedTasks.length,
+    completed: decryptedTasks.filter(t => t.status === 'completed').length,
+    inProgress: decryptedTasks.filter(t => t.status === 'in_progress').length,
+    pending: decryptedTasks.filter(t => t.status === 'pending').length
+  };
 
   // Get task urgency (for sorting/display)
   const getTaskUrgency = (task: Task) => {
@@ -372,6 +486,7 @@ const taskStats = {
     if (daysUntilDue <= 3) return 3; // Due in next 3 days
     return 4; // Not urgent
   };
+
   // Sort tasks by urgency (overdue first, then soonest due dates)
   const sortedTasks = [...filteredTasks].sort((a, b) => {
     const urgencyA = getTaskUrgency(a);
@@ -404,56 +519,60 @@ const taskStats = {
   };
 
   const handleDelete = async (id: string) => {
-  try {
-    // First find the task to be deleted
-    const taskToDelete = tasks.find(task => task.id === id);
-    if (!taskToDelete) return;
+    try {
+      // First find the task to be deleted
+      const taskToDelete = tasks.find(task => task.id === id);
+      if (!taskToDelete) return;
 
-    // Agents can only delete their own tasks
-    if (!isAdmin && taskToDelete.agentId !== agentId) {
-      toast.error('You can only delete your own tasks');
-      return;
+      // Agents can only delete their own tasks
+      if (!isAdmin && taskToDelete.agentId !== agentId) {
+        toast.error('You can only delete your own tasks');
+        return;
+      }
+
+      // Add to backup before deleting
+      if (adminId) {
+        const backupRef = ref(database, `users/${adminId}/backups/tasks/${id}`);
+        await set(backupRef, {
+          ...taskToDelete,
+          deletedAt: new Date().toISOString(),
+          deletedBy: user?.email || (isAdmin ? 'admin' : 'agent')
+        });
+      }
+
+      // Then delete from main tasks
+      const taskRef = ref(database, `users/${adminId}/tasks/${id}`);
+      await remove(taskRef);
+      toast.success('Task moved to backup successfully');
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      toast.error('Failed to delete task');
     }
-
-    // Add to backup before deleting
-    if (adminId) {
-      const backupRef = ref(database, `users/${adminId}/backups/tasks/${id}`);
-      await set(backupRef, {
-        ...taskToDelete,
-        deletedAt: new Date().toISOString(),
-        deletedBy: user?.email || (isAdmin ? 'admin' : 'agent')
-      });
-    }
-
-    // Then delete from main tasks
-    const taskRef = ref(database, `users/${adminId}/tasks/${id}`);
-    await remove(taskRef);
-    toast.success('Task moved to backup successfully');
-  } catch (error) {
-    console.error('Error deleting task:', error);
-    toast.error('Failed to delete task');
-  }
-};
+  };
 
   const handleRestoreTask = async (task: Task) => {
     try {
-      // First add the task back to main tasks
+      // First find the original encrypted task from backup
+      const originalTask = backupTasks.find(t => t.id === task.id);
+      if (!originalTask) return;
+
+      // Add the task back to main tasks (using original encrypted data)
       let taskRef;
       if (isAdmin && adminId) {
-        taskRef = ref(database, `users/${adminId}/tasks/${task.id}`);
+        taskRef = ref(database, `users/${adminId}/tasks/${originalTask.id}`);
       } else if (agentId && adminId) {
-        taskRef = ref(database, `users/${adminId}/agents/${agentId}/tasks/${task.id}`);
+        taskRef = ref(database, `users/${adminId}/agents/${agentId}/tasks/${originalTask.id}`);
       } else {
         throw new Error('Unable to determine storage path');
       }
 
       // Remove the deletedAt field before restoring
-      const { deletedAt, deletedBy, ...taskToRestore } = task;
+      const { deletedAt, deletedBy, ...taskToRestore } = originalTask;
       await set(taskRef, taskToRestore);
       
       // Then remove from backup
       if (adminId) {
-        const backupRef = ref(database, `users/${adminId}/backups/tasks/${task.id}`);
+        const backupRef = ref(database, `users/${adminId}/backups/tasks/${originalTask.id}`);
         await remove(backupRef);
       }
 
@@ -476,72 +595,71 @@ const taskStats = {
       toast.error('Failed to permanently delete task');
     }
   };
-const handleAddTask = async (newTask: Task) => {
-  try {
-    let taskRef;
-    if (isAdmin && adminId) {
-      taskRef = ref(database, `users/${adminId}/tasks/${newTask.id}`);
-    } else if (agentId && adminId) {
-      taskRef = ref(database, `users/${adminId}/tasks/${newTask.id}`);
-      // Ensure the task is assigned to the current agent
-      newTask.agentId = agentId;
-      newTask.agentName = agents.find(a => a.id === agentId)?.name || 'Self';
-    } else {
-      throw new Error('Unable to determine storage path');
-    }
 
-    await set(taskRef, newTask);
-    
-    // Auto-assign if no agent was specified and auto-assign is enabled (admin only)
-    if (isAdmin && automationSettings.autoAssignTasks && !newTask.agentId) {
-      await autoAssignTask(newTask.id);
-    }
-    
-    // REMOVE THIS LINE - let the Firebase listener handle the state update
-    // setTasks(prev => [newTask, ...prev]);
-    
-    setIsAddingTask(false);
-    toast.success('Task added successfully');
-  } catch (error) {
-    console.error('Error adding task:', error);
-    toast.error('Failed to add task');
-  }
-};
- const handleUpdateTask = async (updatedTask: Task) => {
-  try {
-    // Agents can only update their own tasks
-    if (!isAdmin && updatedTask.agentId !== agentId) {
-      toast.error('You can only update your own tasks');
-      return;
-    }
+  const handleAddTask = async (newTask: Task) => {
+    try {
+      let taskRef;
+      if (isAdmin && adminId) {
+        taskRef = ref(database, `users/${adminId}/tasks/${newTask.id}`);
+      } else if (agentId && adminId) {
+        taskRef = ref(database, `users/${adminId}/tasks/${newTask.id}`);
+        // Ensure the task is assigned to the current agent
+        newTask.agentId = agentId;
+        newTask.agentName = agents.find(a => a.id === agentId)?.name || 'Self';
+      } else {
+        throw new Error('Unable to determine storage path');
+      }
 
-    let taskRef;
-    if (isAdmin && adminId) {
-      taskRef = ref(database, `users/${adminId}/tasks/${updatedTask.id}`);
-    } else if (agentId && adminId) {
-      taskRef = ref(database, `users/${adminId}/tasks/${updatedTask.id}`);
-      // Ensure agent can't change assignment
-      updatedTask.agentId = agentId;
-      updatedTask.agentName = agents.find(a => a.id === agentId)?.name || 'Self';
-    } else {
-      throw new Error('Unable to determine storage path');
+      await set(taskRef, newTask);
+      
+      // Auto-assign if no agent was specified and auto-assign is enabled (admin only)
+      if (isAdmin && automationSettings.autoAssignTasks && !newTask.agentId) {
+        await autoAssignTask(newTask.id);
+      }
+      
+      setIsAddingTask(false);
+      toast.success('Task added successfully');
+    } catch (error) {
+      console.error('Error adding task:', error);
+      toast.error('Failed to add task');
     }
+  };
 
-    await set(taskRef, updatedTask);
-    
-    setTasks(prev => prev.map(task => 
-      task.id === updatedTask.id ? updatedTask : task
-    ));
-    setIsAddingTask(false);
-    setSelectedTask(null);
-    toast.success('Task updated successfully');
-  } catch (error) {
-    console.error('Error updating task:', error);
-    toast.error('Failed to update task');
-  }
-};
+  const handleUpdateTask = async (updatedTask: Task) => {
+    try {
+      // Agents can only update their own tasks
+      if (!isAdmin && updatedTask.agentId !== agentId) {
+        toast.error('You can only update your own tasks');
+        return;
+      }
+
+      let taskRef;
+      if (isAdmin && adminId) {
+        taskRef = ref(database, `users/${adminId}/tasks/${updatedTask.id}`);
+      } else if (agentId && adminId) {
+        taskRef = ref(database, `users/${adminId}/tasks/${updatedTask.id}`);
+        // Ensure agent can't change assignment
+        updatedTask.agentId = agentId;
+        updatedTask.agentName = agents.find(a => a.id === agentId)?.name || 'Self';
+      } else {
+        throw new Error('Unable to determine storage path');
+      }
+
+      await set(taskRef, updatedTask);
+      
+      setIsAddingTask(false);
+      setSelectedTask(null);
+      toast.success('Task updated successfully');
+    } catch (error) {
+      console.error('Error updating task:', error);
+      toast.error('Failed to update task');
+    }
+  };
+
   const handleEdit = (task: Task) => {
-    setSelectedTask(task);
+    // Find the original encrypted task to edit
+    const originalTask = tasks.find(t => t.id === task.id) || task;
+    setSelectedTask(originalTask);
     setIsAddingTask(true);
   };
 
@@ -568,6 +686,127 @@ const handleAddTask = async (newTask: Task) => {
         return 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300';
       default:
         return 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-300';
+    }
+  };
+
+  // Analytics functions
+  const addWidget = (type: WidgetType) => {
+    const newWidget: AnalyticsWidget = {
+      id: Date.now().toString(),
+      type,
+      title: type.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())
+    };
+    setAnalyticsWidgets([...analyticsWidgets, newWidget]);
+  };
+
+  const removeWidget = (id: string) => {
+    setAnalyticsWidgets(analyticsWidgets.filter(widget => widget.id !== id));
+  };
+
+  const onDragEnd = (result: DropResult) => {
+    if (!result.destination) return;
+    
+    const items = Array.from(analyticsWidgets);
+    const [reorderedItem] = items.splice(result.source.index, 1);
+    items.splice(result.destination.index, 0, reorderedItem);
+    
+    setAnalyticsWidgets(items);
+  };
+
+  // Render analytics widgets
+  const renderWidget = (widget: AnalyticsWidget) => {
+    switch(widget.type) {
+      case 'priorityDistribution':
+        const priorityCounts = {
+          high: decryptedTasks.filter(t => t.priority === 'high').length,
+          medium: decryptedTasks.filter(t => t.priority === 'medium').length,
+          low: decryptedTasks.filter(t => t.priority === 'low').length
+        };
+        
+        const totalPriorities = priorityCounts.high + priorityCounts.medium + priorityCounts.low;
+        
+        return (
+          <div className="p-4 neuro rounded-lg">
+            <h3 className="font-medium mb-2">{widget.title}</h3>
+            <div className="h-40 flex items-center justify-center">
+              <div className="w-32 h-32 relative">
+                {totalPriorities > 0 && (
+                  <>
+                    <div 
+                      className="absolute inset-0 rounded-full border-4 border-red-500" 
+                      style={{ 
+                        clipPath: `conic-gradient(
+                          transparent 0%, 
+                          transparent ${100 - (priorityCounts.high / totalPriorities) * 100}%, 
+                          red ${100 - (priorityCounts.high / totalPriorities) * 100}% 100%
+                        )` 
+                      }} 
+                    />
+                    <div 
+                      className="absolute inset-0 rounded-full border-4 border-yellow-500" 
+                      style={{ 
+                        clipPath: `conic-gradient(
+                          transparent 0%, 
+                          transparent ${100 - ((priorityCounts.high + priorityCounts.medium) / totalPriorities) * 100}%, 
+                          yellow ${100 - ((priorityCounts.high + priorityCounts.medium) / totalPriorities) * 100}% 100%
+                        )` 
+                      }} 
+                    />
+                    <div 
+                      className="absolute inset-0 rounded-full border-4 border-green-500" 
+                      style={{ 
+                        clipPath: `conic-gradient(
+                          transparent 0%, 
+                          transparent ${100 - ((priorityCounts.high + priorityCounts.medium + priorityCounts.low) / totalPriorities) * 100}%, 
+                          green ${100 - ((priorityCounts.high + priorityCounts.medium + priorityCounts.low) / totalPriorities) * 100}% 100%
+                        )` 
+                      }} 
+                    />
+                  </>
+                )}
+                <div className="absolute inset-4 rounded-full bg-background flex items-center justify-center">
+                  <span className="text-sm font-medium">Priorities</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-center space-x-4 mt-2">
+              <div className="flex items-center">
+                <div className="w-3 h-3 rounded-full bg-red-500 mr-1"></div>
+                <span className="text-xs">High ({priorityCounts.high})</span>
+              </div>
+              <div className="flex items-center">
+                <div className="w-3 h-3 rounded-full bg-yellow-500 mr-1"></div>
+                <span className="text-xs">Medium ({priorityCounts.medium})</span>
+              </div>
+              <div className="flex items-center">
+                <div className="w-3 h-3 rounded-full bg-green-500 mr-1"></div>
+                <span className="text-xs">Low ({priorityCounts.low})</span>
+              </div>
+            </div>
+          </div>
+        );
+      case 'completionRate':
+        const completionRate = taskStats.total > 0 
+          ? Math.round((taskStats.completed / taskStats.total) * 100) 
+          : 0;
+          
+        return (
+          <div className="p-4 neuro rounded-lg">
+            <h3 className="font-medium mb-2">{widget.title}</h3>
+            <div className="h-40 flex flex-col items-center justify-center">
+              <div className="relative w-24 h-24">
+                <div className="absolute inset-0 rounded-full border-4 border-green-500" 
+                  style={{ clipPath: `conic-gradient(transparent 0% ${100 - completionRate}%, green ${100 - completionRate}% 100%)` }} />
+                <div className="absolute inset-4 rounded-full bg-background flex items-center justify-center">
+                  <span className="text-xl font-bold">{completionRate}%</span>
+                </div>
+              </div>
+              <span className="text-sm mt-2">Tasks Completed</span>
+            </div>
+          </div>
+        );
+      default:
+        return null;
     }
   };
 
@@ -679,6 +918,14 @@ const handleAddTask = async (newTask: Task) => {
     );
   };
 
+  if (isDecrypting) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <p>Decrypting task data...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       {/* Automation Settings Dialog */}
@@ -707,7 +954,7 @@ const handleAddTask = async (newTask: Task) => {
                 </label>
               </div>
               <p className="text-xs text-muted-foreground ml-6">
-                Automatically updates task statuses (e.g., to overdue when past due date)
+                Automatically updates task statuses (e.g., to in progress when start date arrives)
               </p>
             </div>
             
@@ -803,33 +1050,119 @@ const handleAddTask = async (newTask: Task) => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-{/* Task Statistics Panel */}
-<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-  <div className="neuro p-3 rounded-lg">
-    <div className="flex justify-between items-center">
-      <span className="text-sm font-medium">Total Tasks</span>
-      <span className="text-lg font-bold">{taskStats.total}</span>
-    </div>
-  </div>
-  <div className="neuro p-3 rounded-lg">
-    <div className="flex justify-between items-center">
-      <span className="text-sm font-medium">Completed</span>
-      <span className="text-lg font-bold text-green-500">{taskStats.completed}</span>
-    </div>
-  </div>
-  <div className="neuro p-3 rounded-lg">
-    <div className="flex justify-between items-center">
-      <span className="text-sm font-medium">In Progress</span>
-      <span className="text-lg font-bold text-blue-500">{taskStats.inProgress}</span>
-    </div>
-  </div>
-  <div className="neuro p-3 rounded-lg">
-    <div className="flex justify-between items-center">
-      <span className="text-sm font-medium">Pending</span>
-      <span className="text-lg font-bold text-yellow-500">{taskStats.pending}</span>
-    </div>
-  </div>
-</div>
+
+      {/* Analytics Panel */}
+      {showAnalyticsPanel && (
+        <div className="neuro p-4 rounded-lg">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold">Task Analytics Dashboard</h2>
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={() => setShowAnalyticsPanel(false)}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+          
+          {/* Add Widget Controls */}
+          <div className="mb-4 p-3 neuro-inset rounded-lg">
+            <h3 className="text-sm font-medium mb-2">Add Widget</h3>
+            <div className="flex flex-wrap gap-2">
+              {availableWidgets
+                .filter(type => !analyticsWidgets.some(w => w.type === type))
+                .map(type => (
+                  <Button
+                    key={type}
+                    variant="outline"
+                    size="sm"
+                    onClick={() => addWidget(type)}
+                    className="capitalize"
+                  >
+                    {type.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                  </Button>
+                ))}
+            </div>
+          </div>
+          
+          {/* Widget Grid */}
+          <DragDropContext onDragEnd={onDragEnd}>
+            <Droppable droppableId="widgets" direction="horizontal">
+              {(provided) => (
+                <div 
+                  {...provided.droppableProps}
+                  ref={provided.innerRef}
+                  className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+                >
+                  {analyticsWidgets.map((widget, index) => (
+                    <Draggable key={widget.id} draggableId={widget.id} index={index}>
+                      {(provided) => (
+                        <div
+                          ref={provided.innerRef}
+                          {...provided.draggableProps}
+                          className="relative"
+                        >
+                          <div 
+                            {...provided.dragHandleProps}
+                            className="absolute top-2 right-2 p-1 rounded-full hover:bg-muted cursor-move"
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="9" cy="12" r="1"></circle>
+                              <circle cx="9" cy="5" r="1"></circle>
+                              <circle cx="9" cy="19" r="1"></circle>
+                              <circle cx="15" cy="12" r="1"></circle>
+                              <circle cx="15" cy="5" r="1"></circle>
+                              <circle cx="15" cy="19" r="1"></circle>
+                            </svg>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="absolute top-2 left-2 h-6 w-6 text-red-500 hover:text-red-600"
+                            onClick={() => removeWidget(widget.id)}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                          {renderWidget(widget)}
+                        </div>
+                      )}
+                    </Draggable>
+                  ))}
+                  {provided.placeholder}
+                </div>
+              )}
+            </Droppable>
+          </DragDropContext>
+        </div>
+      )}
+
+      {/* Task Statistics Panel */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="neuro p-3 rounded-lg">
+          <div className="flex justify-between items-center">
+            <span className="text-sm font-medium">Total Tasks</span>
+            <span className="text-lg font-bold">{taskStats.total}</span>
+          </div>
+        </div>
+        <div className="neuro p-3 rounded-lg">
+          <div className="flex justify-between items-center">
+            <span className="text-sm font-medium">Completed</span>
+            <span className="text-lg font-bold text-green-500">{taskStats.completed}</span>
+          </div>
+        </div>
+        <div className="neuro p-3 rounded-lg">
+          <div className="flex justify-between items-center">
+            <span className="text-sm font-medium">In Progress</span>
+            <span className="text-lg font-bold text-blue-500">{taskStats.inProgress}</span>
+          </div>
+        </div>
+        <div className="neuro p-3 rounded-lg">
+          <div className="flex justify-between items-center">
+            <span className="text-sm font-medium">Pending</span>
+            <span className="text-lg font-bold text-yellow-500">{taskStats.pending}</span>
+          </div>
+        </div>
+      </div>
 
       {/* Search and Actions Bar */}
       <div className="flex flex-col sm:flex-row justify-between gap-4 items-start sm:items-center mb-4">
@@ -841,6 +1174,14 @@ const handleAddTask = async (newTask: Task) => {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
+          <Button 
+            variant="outline"
+            onClick={() => setShowAnalyticsPanel(!showAnalyticsPanel)}
+            className="neuro hover:shadow-none transition-all duration-300"
+          >
+            <BarChart2 className="h-4 w-4 mr-2" />
+            {showAnalyticsPanel ? 'Hide Analytics' : 'Show Analytics'}
+          </Button>
           {isAdmin && (
             <Button 
               variant="outline"

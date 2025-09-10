@@ -6,12 +6,17 @@ import { ChartSelector } from '@/components/dashboard/ChartSelector';
 import { ActionCards } from '@/components/dashboard/ActionCards';
 import { FileText, Users, Phone, Calendar as CalendarIcon, RefreshCw } from 'lucide-react';
 import { EnhancedCalendar } from '@/components/dashboard/EnhancedCalendar';
-import { getDatabase, ref, onValue, update } from 'firebase/database';
+import { getDatabase, ref, onValue, update, get } from 'firebase/database';
 import { isToday, isAfter, parseISO, startOfToday } from 'date-fns';
-import { database } from '../firebase';
+import { database, auth } from '../firebase';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { decryptObject } from '@/lib/utils';
+import PlanModal from '@/pages/PlanModel';
+import { signOut } from 'firebase/auth';
+import { useNavigate } from 'react-router-dom';
+
+// Encryption key - should match your encryption key
+const ENCRYPTION_KEY = 'a1b2c3d4e5f6g7h8a1b2c3d4e5f6g7h8'; // 32 chars for AES-256
 
 interface Meeting {
   id: string;
@@ -22,8 +27,64 @@ interface Meeting {
   status?: string;
 }
 
-const Dashboard: React.FC = () => {
+// Helper function to decrypt data using Web Crypto API
+async function decryptData(encryptedData: string): Promise<string> {
+  if (!encryptedData) return encryptedData;
   
+  try {
+    const decoder = new TextDecoder();
+    const combined = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
+    
+    const iv = combined.slice(0, 12);
+    const data = combined.slice(12);
+    
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(ENCRYPTION_KEY),
+      { name: 'AES-GCM' },
+      false,
+      ['decrypt']
+    );
+    
+    const decrypted = await crypto.subtle.decrypt(
+      {
+        name: 'AES-GCM',
+        iv: iv
+      },
+      key,
+      data
+    );
+    
+    return decoder.decode(decrypted);
+  } catch (error) {
+    console.error('Decryption failed:', error);
+    return encryptedData; // Return original if decryption fails
+  }
+}
+
+// Function to decrypt a meeting object
+async function decryptMeeting(encryptedMeeting: any): Promise<Meeting> {
+  const decryptedMeeting: Meeting = {
+    id: encryptedMeeting.id,
+    startDate: await decryptData(encryptedMeeting.startDate),
+    title: await decryptData(encryptedMeeting.title),
+  };
+
+  // Decrypt optional fields if they exist
+  if (encryptedMeeting.time) {
+    decryptedMeeting.time = await decryptData(encryptedMeeting.time);
+  }
+  if (encryptedMeeting.leadName) {
+    decryptedMeeting.leadName = await decryptData(encryptedMeeting.leadName);
+  }
+  if (encryptedMeeting.status) {
+    decryptedMeeting.status = await decryptData(encryptedMeeting.status);
+  }
+  
+  return decryptedMeeting;
+}
+
+const Dashboard: React.FC = () => {
   const { isAdmin, user } = useAuth();
   const [stats, setStats] = useState({
     totalLeads: 0,
@@ -36,10 +97,15 @@ const Dashboard: React.FC = () => {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showPlanModal, setShowPlanModal] = useState(false);
+  const [trialEndTime, setTrialEndTime] = useState<number | null>(null);
+  const [timeRemaining, setTimeRemaining] = useState<string>('');
   
   const adminId = localStorage.getItem('adminkey');
   const agentId = localStorage.getItem('agentkey') || user?.uid;
   const userId = isAdmin ? adminId : agentId;
+  const navigate = useNavigate();
+
   useEffect(() => {
     const agentId = localStorage.getItem('agentKey');
     const adminId = localStorage.getItem('adminKey');
@@ -48,7 +114,7 @@ const Dashboard: React.FC = () => {
       if (!agentId || !adminId) return;
   
       const logoutRef = ref(database, `users/${adminId}/agents/${agentId}`);
-      const now = new Date().toLocaleString(); // or toISOString()
+      const now = new Date().toLocaleString();
       try {
         await update(logoutRef, {
           logoutTime: now
@@ -58,14 +124,67 @@ const Dashboard: React.FC = () => {
       }
     };
   
-    // Fires on tab close or browser refresh
     window.addEventListener('beforeunload', handleLogoutTime);
   
     return () => {
       window.removeEventListener('beforeunload', handleLogoutTime);
     };
   }, []);
-  
+
+  // Check trial status on component mount
+  useEffect(() => {
+    const checkTrialStatus = async () => {
+      if (!adminId) return;
+      
+      try {
+        const userRef = ref(database, `users/${adminId}`);
+        const snapshot = await get(userRef);
+        
+        if (snapshot.exists()) {
+          const userData = snapshot.val();
+          const trialEnd = userData.trialEnd;
+          
+          if (trialEnd) {
+            setTrialEndTime(trialEnd);
+            
+            // Calculate time remaining for trial
+            const calculateTimeRemaining = () => {
+              const now = Date.now();
+              const remaining = trialEnd - now;
+              
+              if (remaining <= 0) {
+                setTimeRemaining('Trial expired');
+                setShowPlanModal(true);
+                return;
+              }
+              
+              const days = Math.floor(remaining / (1000 * 60 * 60 * 24));
+              const hours = Math.floor((remaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+              
+              setTimeRemaining(`${days}d ${hours}h remaining`);
+              
+              // Check if trial has ended
+              if (remaining <= 0) {
+                setShowPlanModal(true);
+              }
+            };
+            
+            // Calculate immediately
+            calculateTimeRemaining();
+            
+            // Set up interval to check every hour
+            const interval = setInterval(calculateTimeRemaining, 60 * 60 * 1000);
+            
+            return () => clearInterval(interval);
+          }
+        }
+      } catch (error) {
+        console.error('Error checking trial status:', error);
+      }
+    };
+    
+    checkTrialStatus();
+  }, [adminId]);
 
   const fetchMeetings = () => {
     if (!adminId) return;
@@ -87,19 +206,24 @@ const Dashboard: React.FC = () => {
       const today = startOfToday();
   
       if (meetingsData) {
-        const meetingEntries = await Promise.all(
+        // Decrypt all meetings in parallel
+        const decryptedMeetings = await Promise.all(
           Object.entries(meetingsData).map(async ([meetingId, encryptedMeeting]: any) => {
             try {
-              const decryptedMeeting = await decryptObject(encryptedMeeting);
-              return { id: meetingId, ...decryptedMeeting };
-            } catch (err) {
-              console.error("Decryption failed for meeting:", meetingId, err);
+              const decrypted = await decryptMeeting({
+                id: meetingId,
+                ...encryptedMeeting
+              });
+              return decrypted;
+            } catch (error) {
+              console.error(`Error decrypting meeting ${meetingId}:`, error);
               return null;
             }
           })
         );
   
-        meetingEntries.forEach((meeting) => {
+        // Process decrypted meetings
+        decryptedMeetings.forEach((meeting) => {
           if (meeting && meeting.startDate) {
             try {
               const meetingDate = parseISO(meeting.startDate);
@@ -143,7 +267,6 @@ const Dashboard: React.FC = () => {
         });
       }
 
-      // Sort by creation date (assuming createdAt exists)
       allLeads.sort((a, b) => {
         const aDate = leadsData[a.id]?.createdAt ? new Date(leadsData[a.id].createdAt).getTime() : 0;
         const bDate = leadsData[b.id]?.createdAt ? new Date(leadsData[b.id].createdAt).getTime() : 0;
@@ -151,25 +274,17 @@ const Dashboard: React.FC = () => {
       });
 
       if (isAdmin) {
-        // Admin sees all leads
         setStats(prev => ({ ...prev, totalLeads: allLeads.length }));
       } else {
-        // Agent sees sliced leads
         if (!agentId) return;
 
         const agentRef = ref(database, `users/${adminId}/agents/${agentId}`);
         onValue(agentRef, (agentSnapshot) => {
           const agentData = agentSnapshot.val();
-          
-          // Get the position range (1-based index)
           const fromPosition = parseInt(agentData?.from || '0');
           const toPosition = parseInt(agentData?.to || '0');
-          
-          // Validate range
           const safeFrom = Math.max(1, fromPosition);
           const safeTo = Math.min(allLeads.length, toPosition);
-          
-          // Slice the array (using 0-based index)
           const slicedLeads = allLeads.slice(safeFrom - 1, safeTo);
           
           setStats(prev => ({ ...prev, totalLeads: slicedLeads.length }));
@@ -190,6 +305,7 @@ const Dashboard: React.FC = () => {
       }));
     });
   };
+
   const fetchCallsData = () => {
     if (!adminId) return;
   
@@ -202,8 +318,20 @@ const Dashboard: React.FC = () => {
       const today = startOfToday();
   
       if (leadsData) {
+        // Decrypt leads in parallel
         const decryptedLeads = await Promise.all(
-          Object.values(leadsData).map((lead: any) => decryptObject(lead))
+          Object.values(leadsData).map(async (lead: any) => {
+            try {
+              const decryptedLead = {
+                ...lead,
+                scheduledCall: lead.scheduledCall ? await decryptData(lead.scheduledCall) : null
+              };
+              return decryptedLead;
+            } catch (error) {
+              console.error('Error decrypting lead:', error);
+              return lead;
+            }
+          })
         );
   
         decryptedLeads.forEach((lead: any) => {
@@ -230,6 +358,7 @@ const Dashboard: React.FC = () => {
       }
     });
   };
+
   const fetchData = () => {
     setLoading(true);
     setRefreshing(true);
@@ -263,18 +392,35 @@ const Dashboard: React.FC = () => {
     // Implement navigation or modal logic here
   };
 
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+      localStorage.clear();
+      navigate('/login');
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6 max-w-full overflow-x-hidden">
         <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold">Dashboard Overview</h1>
+          <div>
+            <h1 className="text-2xl font-bold">Dashboard Overview</h1>
+            {timeRemaining && (
+              <p className="text-sm text-blue-600 mt-1">
+                Free trial: {timeRemaining}
+              </p>
+            )}
+          </div>
           <Button 
             variant="outline" 
             onClick={handleRefresh}
             disabled={refreshing}
             className="flex items-center gap-2"
           >
-            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
         </div>
@@ -350,6 +496,16 @@ const Dashboard: React.FC = () => {
           </>
         )}
       </div>
+
+      {/* Plan Modal - Blocks all interaction when trial expires */}
+      <PlanModal 
+        isOpen={showPlanModal}
+        onClose={() => {
+          handleSignOut();
+        }}
+        trialEndTime={trialEndTime || 0}
+        isBlocking={true} // This prop should prevent closing the modal
+      />
     </DashboardLayout>
   );
 };

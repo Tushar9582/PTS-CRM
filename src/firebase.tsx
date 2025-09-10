@@ -9,14 +9,14 @@ import { getMessaging } from 'firebase/messaging';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyDNLOemKph8QXlzj8br6IAXL6tzTGxXMg8",
-  authDomain: "pts-lms-e82cf.firebaseapp.com",
-  databaseURL: "https://pts-lms-e82cf-default-rtdb.firebaseio.com",
-  projectId: "pts-lms-e82cf",
-  storageBucket: "pts-lms-e82cf.firebasestorage.app",
-  messagingSenderId: "392587751138",
-  appId: "1:392587751138:web:0c8efa50032c998a6238bb",
-  measurementId: "G-HH35ZQX74J"
+  apiKey: "AIzaSyAuzGxddzJTYUAcXV7QQH-ep6qULJfWbh8",
+  authDomain: "pts-crm-a3cae.firebaseapp.com",
+  databaseURL: "https://pts-crm-a3cae-default-rtdb.firebaseio.com",
+  projectId: "pts-crm-a3cae",
+  storageBucket: "pts-crm-a3cae.firebasestorage.app",
+  messagingSenderId: "431606697445",
+  appId: "1:431606697445:web:715a36cd0ab5b2a69fb30c",
+  measurementId: "G-F6BPMDT4NH"
 };
 
 // Initialize Firebase

@@ -570,7 +570,7 @@ export const SignupForm: React.FC = () => {
                 className="w-full h-full flex items-center justify-center"
               >
                 <img
-                  src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTDUVs58vM-moa0ODPnnuQV4iwmSOWTDJgbBA&s"
+                  src="/3.png"
                   alt="Signup Illustration"
                   className="w-full h-full object-cover rounded-lg shadow-md"
                 />

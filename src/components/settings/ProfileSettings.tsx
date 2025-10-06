@@ -40,6 +40,12 @@ const COUNTRY_CODES = [
   { code: 'SG', dialCode: '+65', name: 'Singapore', flag: '🇸🇬' },
 ];
 
+// Function to get country flag from country code
+const getCountryFlag = (countryCode: string): string => {
+  const country = COUNTRY_CODES.find(c => c.dialCode === countryCode);
+  return country ? country.flag : '🇺🇸'; // Default to US flag
+};
+
 // Improved decryption function
 async function decryptData(encryptedData: string): Promise<string> {
   try {
@@ -158,32 +164,66 @@ export const ProfileSettings: React.FC = () => {
       try {
         if (!user) return;
 
+        console.log('Fetching profile data for user:', user.id, 'Role:', user.role);
+
         // Start with auth context data
-        setFormData(prev => ({
-          ...prev,
+        const initialData = {
           firstName: user.firstName || '',
           lastName: user.lastName || '',
-          email: user.email || ''
-        }));
+          email: user.email || '',
+          countryCode: '+1',
+          phone: '',
+          avatar: '/placeholder.svg',
+          bio: '',
+          password: '',
+          confirmPassword: ''
+        };
+
+        setFormData(initialData);
 
         const adminId = localStorage.getItem('adminkey');
         const agentId = localStorage.getItem('agentkey');
         const errors: string[] = [];
 
         if (user.role === 'admin') {
-          // Admin path - no encryption
-          const userRef = ref(database, `users/${user.id}/usersdetails`);
-          const snapshot = await get(userRef);
+          console.log('Admin profile loading...');
           
-          if (snapshot.exists()) {
-            const userData = snapshot.val();
-            setFormData(prev => ({
-              ...prev,
-              phone: userData.phone || prev.phone,
-              countryCode: userData.countryCode || prev.countryCode,
-              avatar: userData.avatar || prev.avatar,
-              bio: userData.bio || prev.bio
-            }));
+          // Admin path - no encryption
+          try {
+            const userRef = ref(database, `users/${user.id}/usersdetails`);
+            const snapshot = await get(userRef);
+            
+            if (snapshot.exists()) {
+              const userData = snapshot.val();
+              console.log('Admin profile data found:', userData);
+              
+              setFormData(prev => ({
+                ...prev,
+                firstName: userData.firstName || prev.firstName,
+                lastName: userData.lastName || prev.lastName,
+                email: userData.email || prev.email,
+                phone: userData.phone || prev.phone,
+                countryCode: userData.countryCode || prev.countryCode,
+                avatar: userData.avatar || prev.avatar,
+                bio: userData.bio || prev.bio
+              }));
+            } else {
+              console.log('No admin profile data found, using auth context data');
+              // If no profile data exists, create initial profile with auth data
+              await update(ref(database, `users/${user.id}/usersdetails`), {
+                firstName: user.firstName || '',
+                lastName: user.lastName || '',
+                email: user.email || '',
+                phone: '',
+                countryCode: '+1',
+                avatar: '/placeholder.svg',
+                bio: '',
+                createdAt: new Date().toISOString()
+              });
+            }
+          } catch (error) {
+            console.error('Error loading admin profile:', error);
+            errors.push('Failed to load admin profile data');
           }
         } else if (user.role === 'agent' && adminId) {
           // Agent path - needs decryption
@@ -191,6 +231,8 @@ export const ProfileSettings: React.FC = () => {
           setDecryptionErrors([]);
           
           try {
+            console.log('Loading agent profile for admin:', adminId, 'agent:', user.id);
+            
             const [agentSnapshot, detailsSnapshot] = await Promise.all([
               get(ref(database, `users/${adminId}/agents/${user.id}`)),
               get(ref(database, `users/${adminId}/agents/${user.id}/usersdetails`))
@@ -201,10 +243,12 @@ export const ProfileSettings: React.FC = () => {
 
             if (agentSnapshot.exists()) {
               agentData = await decryptAgentData(agentSnapshot.val());
+              console.log('Decrypted agent data:', agentData);
             }
 
             if (detailsSnapshot?.exists()) {
               detailsData = await decryptAgentData(detailsSnapshot.val());
+              console.log('Decrypted agent details:', detailsData);
             }
 
             // Merge data with details taking precedence
@@ -328,6 +372,13 @@ export const ProfileSettings: React.FC = () => {
           return;
         }
 
+        // Validate file size (max 5MB)
+        if (avatarFile.size > 5 * 1024 * 1024) {
+          toast.error('Image size should be less than 5MB');
+          setLoading(false);
+          return;
+        }
+
         // Convert to base64 for storage in Realtime Database
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -341,17 +392,32 @@ export const ProfileSettings: React.FC = () => {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
 
+      console.log('Saving profile data for user:', user.id, 'Role:', user.role);
+
       if (user.role === 'admin') {
         // Admin update (unencrypted)
-        await update(ref(database, `users/${user.id}/usersdetails`), {
+        const adminUpdates = {
           firstName: formData.firstName,
           lastName: formData.lastName,
           phone: formData.phone,
           countryCode: formData.countryCode,
           bio: formData.bio,
           email: formData.email,
-          avatar: avatarUrl
+          avatar: avatarUrl,
+          updatedAt: new Date().toISOString()
+        };
+
+        console.log('Saving admin data:', adminUpdates);
+        
+        await update(ref(database, `users/${user.id}/usersdetails`), adminUpdates);
+        
+        // Also update the main user node for quick access
+        await update(ref(database, `users/${user.id}`), {
+          email: formData.email,
+          name: `${formData.firstName} ${formData.lastName}`.trim(),
+          updatedAt: new Date().toISOString()
         });
+
       } else if (user.role === 'agent' && adminId) {
         // Agent update (encrypted)
         const encryptedUpdates = {
@@ -365,12 +431,15 @@ export const ProfileSettings: React.FC = () => {
           name: await encryptData(`${formData.firstName} ${formData.lastName}`.trim())
         };
 
+        console.log('Saving encrypted agent data');
+
         // Prepare all updates
         const updates: Record<string, any> = {
           [`users/${adminId}/agents/${user.id}/encryptedName`]: encryptedUpdates.name,
           [`users/${adminId}/agents/${user.id}/encryptedEmail`]: encryptedUpdates.email,
           [`users/${adminId}/agents/${user.id}/encryptedPhone`]: encryptedUpdates.phone,
           [`users/${adminId}/agents/${user.id}/encryptedCountryCode`]: encryptedUpdates.countryCode,
+          [`users/${adminId}/agents/${user.id}/updatedAt`]: new Date().toISOString(),
           [`users/${adminId}/agents/${user.id}/usersdetails`]: {
             encryptedFirstName: encryptedUpdates.firstName,
             encryptedLastName: encryptedUpdates.lastName,
@@ -378,7 +447,8 @@ export const ProfileSettings: React.FC = () => {
             encryptedPhone: encryptedUpdates.phone,
             encryptedCountryCode: encryptedUpdates.countryCode,
             encryptedBio: encryptedUpdates.bio,
-            encryptedAvatar: encryptedUpdates.avatar
+            encryptedAvatar: encryptedUpdates.avatar,
+            updatedAt: new Date().toISOString()
           }
         };
 
@@ -387,6 +457,7 @@ export const ProfileSettings: React.FC = () => {
 
       toast.success('Profile updated successfully');
       setFormData(prev => ({ ...prev, password: '', confirmPassword: '' }));
+      setAvatarFile(null); // Reset avatar file after save
     } catch (error) {
       console.error('Error updating profile:', error);
       toast.error('Failed to update profile');
@@ -435,6 +506,12 @@ export const ProfileSettings: React.FC = () => {
       const validImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
       if (!validImageTypes.includes(file.type)) {
         toast.error('Please select a valid image file (JPEG, JPG, PNG, GIF, WEBP)');
+        return;
+      }
+      
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error('Image size should be less than 5MB');
         return;
       }
       
@@ -503,7 +580,7 @@ export const ProfileSettings: React.FC = () => {
       )}
 
       <CardContent className="space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center gap-6">
+        <div className="flex flex-col md:flex-row md:items-start gap-6">
           <div className="flex flex-col items-center space-y-2">
             <label htmlFor="avatar-upload" className="cursor-pointer">
               <Avatar className="h-24 w-24 relative group">
@@ -523,7 +600,9 @@ export const ProfileSettings: React.FC = () => {
               onChange={handleAvatarChange}
               className="hidden"
             />
-            <span className="text-xs text-muted-foreground">Click to change (JPEG, JPG, PNG, GIF, WEBP)</span>
+            <span className="text-xs text-muted-foreground text-center">
+              Click to change<br />(JPEG, JPG, PNG, GIF, WEBP)<br />Max 5MB
+            </span>
           </div>
           
           <div className="space-y-4 flex-1">
@@ -578,18 +657,22 @@ export const ProfileSettings: React.FC = () => {
                 <Phone className="h-4 w-4" />
                 Phone Number
               </Label>
-              <div className="flex gap-2">
+              <div className="flex gap-2 items-center">
                 <Select value={formData.countryCode} onValueChange={handleCountryCodeChange}>
-                  <SelectTrigger className="w-28 neuro-inset">
-                    <SelectValue placeholder="Code" />
+                  <SelectTrigger className="w-40 neuro-inset">
+                    <div className="flex items-center gap-2 w-full">
+                      <span className="text-lg flex-shrink-0">{getCountryFlag(formData.countryCode)}</span>
+                      <span className="text-sm font-medium">{formData.countryCode}</span>
+                    </div>
                   </SelectTrigger>
-                  <SelectContent className="max-h-60">
+                  <SelectContent className="max-h-60 w-64">
                     {COUNTRY_CODES.map((country) => (
-                      <SelectItem key={country.code} value={country.dialCode}>
-                        <span className="flex items-center gap-2">
-                          <span>{country.flag}</span>
-                          <span>{country.dialCode}</span>
-                        </span>
+                      <SelectItem key={country.code} value={country.dialCode} className="py-2">
+                        <div className="flex items-center gap-3">
+                          <span className="text-lg flex-shrink-0">{country.flag}</span>
+                          <span className="font-medium">{country.dialCode}</span>
+                          <span className="text-muted-foreground text-sm flex-1">{country.name}</span>
+                        </div>
                       </SelectItem>
                     ))}
                   </SelectContent>

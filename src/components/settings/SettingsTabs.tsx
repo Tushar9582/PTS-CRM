@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
-  User, Shield, HelpCircle, Palette, Mail, CheckCircle2, XCircle, Loader2
+  User, Shield, HelpCircle, Palette, Mail, CheckCircle2, XCircle, Loader2,
+  Share2
 } from 'lucide-react';
 import { ThemeSettings } from './ThemeSettings';
 import { ProfileSettings } from './ProfileSettings';
 import { HelpFAQs } from './HelpFAQs';
+import { SocialMediaSettings } from './SocialMediaSettings';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Switch } from "@/components/ui/switch";
 import { database } from '../../firebase';
@@ -175,6 +177,7 @@ export const SettingsTabs = () => {
     { value: 'profile', icon: User, label: 'Profile' },
     { value: 'appearance', icon: Palette, label: 'Appearance' },
     ...(isAdmin ? [{ value: 'agents', icon: Shield, label: 'Agents' }] : []),
+    { value: 'social', icon: Share2, label: 'Social Media' },
     { value: 'help', icon: HelpCircle, label: 'Help' }
   ];
 
@@ -207,6 +210,7 @@ export const SettingsTabs = () => {
                 'profile': 'Profile Settings',
                 'appearance': 'Appearance Settings',
                 'agents': 'Agents Management',
+                'social': 'Social Media Integration',
                 'help': 'Help Center'
               }[document.querySelector('[data-state="active"][data-orientation="horizontal"]')?.getAttribute('value') || 'profile']}
             </h2>
@@ -229,68 +233,82 @@ export const SettingsTabs = () => {
                 <p className="text-muted-foreground">Manage your active and inactive agents</p>
               </div>
               
-              {decryptionErrors.length > 0 && (
-                <div className="bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-400 p-4 rounded">
-                  <div className="flex items-start gap-3">
-                    <svg className="h-5 w-5 text-yellow-400 mt-0.5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                    </svg>
-                    <div>
-                      <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">Decryption Notice</h3>
-                      <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
-                        Some agent data couldn't be decrypted properly. Information may appear incomplete.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {loading ? (
-                <div className="flex justify-center items-center py-8">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                </div>
-              ) : agents.length === 0 ? (
-                <div className="text-center py-8 space-y-2">
-                  <Shield className="h-10 w-10 mx-auto text-muted-foreground" />
-                  <p className="text-muted-foreground">No agents found</p>
+              {!isAdmin ? (
+                <div className="text-center py-8">
+                  <Shield className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-semibold">Admin Access Required</h3>
+                  <p className="text-muted-foreground">You need admin privileges to access agent management.</p>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {agents.map((agent) => (
-                    <div key={agent.id} className="flex items-center justify-between p-4 neuro rounded-lg">
-                      <div className="flex items-center gap-4">
-                        <div className={`p-2 rounded-full ${
-                          agent.status === 'active' 
-                            ? 'bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400' 
-                            : 'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400'
-                        }`}>
-                          {agent.status === 'active' ? (
-                            <CheckCircle2 className="h-5 w-5" />
-                          ) : (
-                            <XCircle className="h-5 w-5" />
-                          )}
-                        </div>
+                <>
+                  {decryptionErrors.length > 0 && (
+                    <div className="bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-400 p-4 rounded">
+                      <div className="flex items-start gap-3">
+                        <svg className="h-5 w-5 text-yellow-400 mt-0.5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
                         <div>
-                          <h4 className="font-medium">{agent.name}</h4>
-                          <p className="text-sm text-muted-foreground flex items-center gap-1">
-                            <Mail className="h-4 w-4" />
-                            {agent.email}
+                          <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">Decryption Notice</h3>
+                          <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                            Some agent data couldn't be decrypted properly. Information may appear incomplete.
                           </p>
                         </div>
                       </div>
-                      <Switch
-                        checked={agent.status === 'active'}
-                        onCheckedChange={(checked) => 
-                          handleStatusChange(agent.id, checked ? 'active' : 'inactive')
-                        }
-                      />
                     </div>
-                  ))}
-                </div>
+                  )}
+
+                  {loading ? (
+                    <div className="flex justify-center items-center py-8">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    </div>
+                  ) : agents.length === 0 ? (
+                    <div className="text-center py-8 space-y-2">
+                      <Shield className="h-10 w-10 mx-auto text-muted-foreground" />
+                      <p className="text-muted-foreground">No agents found</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {agents.map((agent) => (
+                        <div key={agent.id} className="flex items-center justify-between p-4 neuro rounded-lg">
+                          <div className="flex items-center gap-4">
+                            <div className={`p-2 rounded-full ${
+                              agent.status === 'active' 
+                                ? 'bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400' 
+                                : 'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400'
+                            }`}>
+                              {agent.status === 'active' ? (
+                                <CheckCircle2 className="h-5 w-5" />
+                              ) : (
+                                <XCircle className="h-5 w-5" />
+                              )}
+                            </div>
+                            <div>
+                              <h4 className="font-medium">{agent.name}</h4>
+                              <p className="text-sm text-muted-foreground flex items-center gap-1">
+                                <Mail className="h-4 w-4" />
+                                {agent.email}
+                              </p>
+                            </div>
+                          </div>
+                          <Switch
+                            checked={agent.status === 'active'}
+                            onCheckedChange={(checked) => 
+                              handleStatusChange(agent.id, checked ? 'active' : 'inactive')
+                            }
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </TabsContent>
         )}
+
+        <TabsContent value="social">
+          <SocialMediaSettings />
+        </TabsContent>
 
         <TabsContent value="help">
           <HelpFAQs />

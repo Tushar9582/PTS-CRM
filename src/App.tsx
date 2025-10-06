@@ -10,7 +10,6 @@ import { AIAssistant } from "@/components/common/AIAssistant";
 import { useEffect, useState } from "react";
 import ProtectedRoute from './components/ProtectedRoute';
 
-
 // Pages
 import Index from "./pages/Index";
 import Login from "./pages/Login";
@@ -40,6 +39,8 @@ const AuthWrapper = ({ children }: { children: React.ReactNode }) => {
 };
 
 const AppRoutes = () => {
+  const { user } = useAuth();
+  
   return (
     <Routes>
       <Route path="/" element={<Index />} />
@@ -53,7 +54,8 @@ const AppRoutes = () => {
           <Dashboard />
         </AuthLayout>
       } />
-        <Route path="/leads" element={
+      
+      <Route path="/leads" element={
         <AuthLayout>
           <Leads />
         </AuthLayout>
@@ -95,9 +97,15 @@ const AppRoutes = () => {
         </AuthLayout>
       } />
       
-      <Route path="*" element={<NotFound />} />
+      {/* Redirect to dashboard if user is authenticated and tries to access auth pages */}
+      {user && (
+        <>
+          <Route path="/login" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/signup" element={<Navigate to="/dashboard" replace />} />
+        </>
+      )}
       
-      {/* Other protected routes remain the same */}
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 };

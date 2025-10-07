@@ -901,326 +901,332 @@ export const AgentCards: React.FC = () => {
         </>
       )}
 
-      <Dialog open={!!viewingAgent} onOpenChange={(open) => !open && setViewingAgent(null)}>
-        <DialogContent className="sm:max-w-[600px] neuro border-none max-h-[90vh] overflow-y-auto">
-          {viewingAgent && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="mr-2"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigateAgent('prev');
-                      }}
-                      disabled={filteredAgents.findIndex(a => a.id === viewingAgent.id) === 0}
-                    >
-                      <ChevronLeft className="h-5 w-5" />
-                    </Button>
-                    <span className="truncate max-w-[200px]" title={viewingAgent.name}>
-                      Agent Details
+    <Dialog open={!!viewingAgent} onOpenChange={(open) => !open && setViewingAgent(null)}>
+  <DialogContent className="sm:max-w-[600px] neuro border-none max-h-[90vh] overflow-y-auto">
+    {viewingAgent && (
+      <>
+        <DialogHeader>
+          <DialogTitle className="flex items-center justify-between">
+            <div className="flex items-center w-full">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="mr-2 flex-shrink-0"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigateAgent('prev');
+                }}
+                disabled={filteredAgents.findIndex(a => a.id === viewingAgent.id) === 0}
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </Button>
+              <span className="truncate max-w-[120px] sm:max-w-[200px] text-base sm:text-lg" title={viewingAgent.name}>
+                Agent Details
+              </span>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="ml-2 flex-shrink-0"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigateAgent('next');
+                }}
+                disabled={filteredAgents.findIndex(a => a.id === viewingAgent.id) === filteredAgents.length - 1}
+              >
+                <ChevronRight className="h-5 w-5" />
+              </Button>
+            </div>
+          </DialogTitle>
+        </DialogHeader>
+        
+        <Tabs defaultValue="details" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="details" className="text-xs sm:text-sm px-2 sm:px-3">
+              Details
+            </TabsTrigger>
+            <TabsTrigger value="activities" className="text-xs sm:text-sm px-2 sm:px-3">
+              <Activity className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+              Activities
+            </TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="details">
+            <div className="space-y-4 sm:space-y-6">
+              <div className="flex flex-col items-center text-center sm:flex-row sm:items-start sm:text-left gap-4 sm:gap-6">
+                <Avatar className="h-20 w-20 sm:h-24 sm:w-24 flex-shrink-0">
+                  <AvatarImage src={viewingAgent.avatar} alt={viewingAgent.name} />
+                  <AvatarFallback className="text-lg sm:text-xl">{viewingAgent.name.charAt(0)}</AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-xl sm:text-2xl font-bold truncate" title={viewingAgent.name}>
+                    {viewingAgent.name}
+                  </h2>
+                  <p className="text-base sm:text-lg text-muted-foreground truncate mt-1" title={viewingAgent.designation}>
+                    {viewingAgent.designation}
+                  </p>
+                  <div className="flex items-center justify-center sm:justify-start mt-2">
+                    <span className={`inline-flex items-center px-2 py-1 sm:px-3 sm:py-1 rounded-full text-xs sm:text-sm font-medium ${
+                      viewingAgent.status === 'active' 
+                        ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300' 
+                        : viewingAgent.status === 'inactive'
+                        ? 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-300'
+                        : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300'
+                    }`}>
+                      {viewingAgent.status === 'active' ? (
+                        <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                      ) : viewingAgent.status === 'inactive' ? (
+                        <XCircle className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                      ) : (
+                        <User className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                      )}
+                      {viewingAgent.status === 'on_leave' ? 'On Leave' : viewingAgent.status.charAt(0).toUpperCase() + viewingAgent.status.slice(1)}
                     </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:gap-4">
+                <div className="space-y-3 sm:space-y-2">
+                  <div className="flex items-start sm:items-center">
+                    <Mail className="h-4 w-4 sm:h-5 sm:w-5 mr-2 text-muted-foreground flex-shrink-0 mt-0.5 sm:mt-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs sm:text-sm text-muted-foreground">Email</p>
+                      <p className="text-sm sm:text-base truncate" title={viewingAgent.email}>
+                        {viewingAgent.email}
+                      </p>
+                    </div>
+                  </div>
+                  {viewingAgent.password && (
+                    <div className="flex items-start sm:items-center">
+                      <Mail className="h-4 w-4 sm:h-5 sm:w-5 mr-2 text-muted-foreground flex-shrink-0 mt-0.5 sm:mt-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs sm:text-sm text-muted-foreground">Password</p>
+                        <div className="flex items-center">
+                          <p className="text-sm sm:text-base truncate">
+                            {showPassword ? viewingAgent.password : "••••••••"}
+                          </p>
+                          <button 
+                            onClick={toggleShowPassword} 
+                            className="ml-2 text-muted-foreground hover:text-foreground flex-shrink-0"
+                          >
+                            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex items-start sm:items-center">
+                    <Smartphone className="h-4 w-4 sm:h-5 sm:w-5 mr-2 text-muted-foreground flex-shrink-0 mt-0.5 sm:mt-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs sm:text-sm text-muted-foreground">Phone</p>
+                      <p className="text-sm sm:text-base truncate" title={viewingAgent.phone}>
+                        {viewingAgent.phone}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-3 sm:space-y-2">
+                  <div className="flex items-start sm:items-center">
+                    <Briefcase className="h-4 w-4 sm:h-5 sm:w-5 mr-2 text-muted-foreground flex-shrink-0 mt-0.5 sm:mt-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs sm:text-sm text-muted-foreground">Designation</p>
+                      <p className="text-sm sm:text-base truncate" title={viewingAgent.designation}>
+                        {viewingAgent.designation}
+                      </p>
+                    </div>
+                  </div>
+                  {viewingAgent.birthDate && (
+                    <div className="flex items-start sm:items-center">
+                      <Calendar className="h-4 w-4 sm:h-5 sm:w-5 mr-2 text-muted-foreground flex-shrink-0 mt-0.5 sm:mt-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs sm:text-sm text-muted-foreground">Birth Date</p>
+                        <p className="text-sm sm:text-base">{new Date(viewingAgent.birthDate).toLocaleDateString()}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {viewingAgent.assignedLeads && (
+                <div className="bg-muted/50 p-3 sm:p-4 rounded-lg">
+                  <h3 className="font-medium text-sm sm:text-base mb-2">Performance</h3>
+                  <div className="grid grid-cols-3 gap-2 sm:gap-4">
+                    <div className="text-center">
+                      <p className="text-lg sm:text-2xl font-bold truncate text-xs sm:text-base">
+                        {viewingAgent.assignedLeads.from} - {viewingAgent.assignedLeads.to}
+                      </p>
+                      <p className="text-xs sm:text-sm text-muted-foreground mt-1">Assigned Leads Range</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-lg sm:text-2xl font-bold">
+                        {viewingAgent.assignedLeads.to - viewingAgent.assignedLeads.from}
+                      </p>
+                      <p className="text-xs sm:text-sm text-muted-foreground mt-1">Total Leads</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-lg sm:text-2xl font-bold">-</p>
+                      <p className="text-xs sm:text-sm text-muted-foreground mt-1">Conversion Rate</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-col-reverse sm:flex-row justify-between gap-2 sm:space-x-2 pt-3 sm:pt-4">
+                <Button 
+                  variant="destructive"
+                  size="sm"
+                  className="w-full sm:w-auto text-xs sm:text-sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteClick(viewingAgent);
+                  }}
+                >
+                  <Trash2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                  Delete Agent
+                </Button>
+                <div className="flex flex-col sm:flex-row gap-2 sm:space-x-2">
+                  <Button 
+                    variant="outline"
+                    size="sm"
+                    className="w-full sm:w-auto text-xs sm:text-sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEdit(viewingAgent);
+                    }}
+                  >
+                    <Edit className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                    Edit Agent
+                  </Button>
+                  <div className="flex justify-center sm:justify-start space-x-1">
                     <Button 
                       variant="ghost" 
-                      size="icon" 
-                      className="ml-2"
+                      size="icon"
+                      className="h-8 w-8 sm:h-10 sm:w-10 text-muted-foreground hover:text-foreground"
                       onClick={(e) => {
                         e.stopPropagation();
-                        navigateAgent('next');
+                        handleContactAction('call', viewingAgent);
                       }}
-                      disabled={filteredAgents.findIndex(a => a.id === viewingAgent.id) === filteredAgents.length - 1}
+                      title="Call"
                     >
-                      <ChevronRight className="h-5 w-5" />
+                      <Phone className="h-4 w-4 sm:h-5 sm:w-5" />
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="icon"
+                      className="h-8 w-8 sm:h-10 sm:w-10 text-muted-foreground hover:text-foreground"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleContactAction('email', viewingAgent);
+                      }}
+                      title="Email"
+                    >
+                      <Mail className="h-4 w-4 sm:h-5 sm:w-5" />
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="icon"
+                      className="h-8 w-8 sm:h-10 sm:w-10 text-muted-foreground hover:text-foreground"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleContactAction('whatsapp', viewingAgent);
+                      }}
+                      title="WhatsApp"
+                    >
+                      <MessageSquare className="h-4 w-4 sm:h-5 sm:w-5" />
                     </Button>
                   </div>
-                </DialogTitle>
-              </DialogHeader>
+                </div>
+              </div>
+            </div>
+          </TabsContent>
+          
+          <TabsContent value="activities">
+            <div className="space-y-4">
+              <DialogDescription className="text-sm sm:text-base">
+                Recent activities for {viewingAgent.name}
+              </DialogDescription>
               
-              <Tabs defaultValue="details" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="details">Details</TabsTrigger>
-                  <TabsTrigger value="activities">
-                    <Activity className="h-4 w-4 mr-2" />
-                    Activities
-                  </TabsTrigger>
-                </TabsList>
-                
-                <TabsContent value="details">
-                  <div className="space-y-6">
-                    <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
-                      <Avatar className="h-24 w-24 flex-shrink-0">
-                        <AvatarImage src={viewingAgent.avatar} alt={viewingAgent.name} />
-                        <AvatarFallback>{viewingAgent.name.charAt(0)}</AvatarFallback>
-                      </Avatar>
-                      <div className="text-center sm:text-left min-w-0 flex-1">
-                        <h2 className="text-2xl font-bold truncate" title={viewingAgent.name}>
-                          {viewingAgent.name}
-                        </h2>
-                        <p className="text-lg text-muted-foreground truncate" title={viewingAgent.designation}>
-                          {viewingAgent.designation}
-                        </p>
-                        <div className="flex items-center justify-center sm:justify-start mt-2">
-                          <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                            viewingAgent.status === 'active' 
-                              ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300' 
-                              : viewingAgent.status === 'inactive'
-                              ? 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-300'
-                              : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300'
-                          }`}>
-                            {viewingAgent.status === 'active' ? (
-                              <CheckCircle className="h-4 w-4 mr-1" />
-                            ) : viewingAgent.status === 'inactive' ? (
-                              <XCircle className="h-4 w-4 mr-1" />
-                            ) : (
-                              <User className="h-4 w-4 mr-1" />
-                            )}
-                            {viewingAgent.status === 'on_leave' ? 'On Leave' : viewingAgent.status.charAt(0).toUpperCase() + viewingAgent.status.slice(1)}
-                          </span>
-                        </div>
+              {loadingActivities ? (
+                <div className="flex justify-center items-center h-24 sm:h-32">
+                  <p className="text-sm sm:text-base">Loading activities...</p>
+                </div>
+              ) : agentActivities.length === 0 ? (
+                <div className="text-center py-6 sm:py-8">
+                  <p className="text-muted-foreground text-sm sm:text-base">No activities found</p>
+                </div>
+              ) : (
+                <div className="space-y-3 sm:space-y-4 max-h-[300px] sm:max-h-[400px] overflow-y-auto">
+                  {agentActivities.map((activity) => (
+                    <div key={activity.id} className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
+                      <div className="flex-shrink-0 mt-0.5 sm:mt-1">
+                        {activity.action === 'agent_updated' && <Edit className="h-4 w-4 sm:h-5 sm:w-5 text-orange-500" />}
+                        {activity.action === 'agent_created' && <Plus className="h-4 w-4 sm:h-5 sm:w-5 text-green-500" />}
+                        {activity.action.includes('call') && <Phone className="h-4 w-4 sm:h-5 sm:w-5 text-blue-500" />}
+                        {activity.action.includes('email') && <Mail className="h-4 w-4 sm:h-5 sm:w-5 text-purple-500" />}
+                        {activity.action.includes('whatsapp') && <MessageSquare className="h-4 w-4 sm:h-5 sm:w-5 text-green-600" />}
+                        {activity.action === 'agent_deleted' && <Trash2 className="h-4 w-4 sm:h-5 sm:w-5 text-red-500" />}
                       </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <div className="flex items-center">
-                          <Mail className="h-5 w-5 mr-2 text-muted-foreground flex-shrink-0" />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm text-muted-foreground">Email</p>
-                            <p className="truncate" title={viewingAgent.email}>
-                              {viewingAgent.email}
-                            </p>
-                          </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-1 sm:gap-2">
+                          <p className="font-medium text-sm sm:text-base capitalize truncate">
+                            {activity.action.replace(/_/g, ' ')}
+                          </p>
+                          <p className="text-xs sm:text-sm text-muted-foreground flex-shrink-0">
+                            {new Date(activity.timestamp).toLocaleString()}
+                          </p>
                         </div>
-                        {viewingAgent.password && (
-                          <div className="flex items-center">
-                            <Mail className="h-5 w-5 mr-2 text-muted-foreground flex-shrink-0" />
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm text-muted-foreground">Password</p>
-                              <div className="flex items-center">
-                                <p className="truncate">
-                                  {showPassword ? viewingAgent.password : "••••••••"}
-                                </p>
-                                <button 
-                                  onClick={toggleShowPassword} 
-                                  className="ml-2 text-muted-foreground hover:text-foreground flex-shrink-0"
-                                >
-                                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                </button>
-                              </div>
-                            </div>
+                        
+                        {activity.leadDetails && (
+                          <div className="mt-2 space-y-1">
+                            <p className="text-xs sm:text-sm truncate" title={activity.leadDetails.name + (activity.leadDetails.company ? ` (${activity.leadDetails.company})` : '')}>
+                              <span className="font-medium">Lead:</span> {activity.leadDetails.name}
+                              {activity.leadDetails.company && ` (${activity.leadDetails.company})`}
+                            </p>
+                            <p className="text-xs text-muted-foreground truncate" title={activity.leadDetails.email}>
+                              {activity.leadDetails.email}
+                            </p>
+                            <p className="text-xs text-muted-foreground truncate" title={activity.leadDetails.phone}>
+                              {activity.leadDetails.phone}
+                            </p>
                           </div>
                         )}
-                        <div className="flex items-center">
-                          <Smartphone className="h-5 w-5 mr-2 text-muted-foreground flex-shrink-0" />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm text-muted-foreground">Phone</p>
-                            <p className="truncate" title={viewingAgent.phone}>
-                              {viewingAgent.phone}
-                            </p>
+
+                        {activity.changes && (
+                          <div className="mt-2 space-y-1">
+                            {Object.entries(activity.changes).map(([field, change]) => (
+                              <div key={field} className="text-xs sm:text-sm">
+                                <p className="font-medium truncate">{change.fieldName}:</p>
+                                <div className="flex gap-1 sm:gap-2 items-center">
+                                  <span className="text-red-500 line-through truncate flex-1" title={change.old}>
+                                    {truncateText(change.old, 20)}
+                                  </span>
+                                  <span className="text-muted-foreground flex-shrink-0">→</span>
+                                  <span className="text-green-500 truncate flex-1" title={change.new}>
+                                    {truncateText(change.new, 20)}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex items-center">
-                          <Briefcase className="h-5 w-5 mr-2 text-muted-foreground flex-shrink-0" />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm text-muted-foreground">Designation</p>
-                            <p className="truncate" title={viewingAgent.designation}>
-                              {viewingAgent.designation}
-                            </p>
-                          </div>
-                        </div>
-                        {viewingAgent.birthDate && (
-                          <div className="flex items-center">
-                            <Calendar className="h-5 w-5 mr-2 text-muted-foreground flex-shrink-0" />
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm text-muted-foreground">Birth Date</p>
-                              <p>{new Date(viewingAgent.birthDate).toLocaleDateString()}</p>
-                            </div>
+                        )}
+
+                        {activity.environment && (
+                          <div className="mt-2 text-xs text-muted-foreground">
+                            <p className="truncate">From: {activity.environment.device.split(' ')[0]}</p>
                           </div>
                         )}
                       </div>
                     </div>
-
-                    {viewingAgent.assignedLeads && (
-                      <div className="bg-muted/50 p-4 rounded-lg">
-                        <h3 className="font-medium mb-2">Performance</h3>
-                        <div className="grid grid-cols-3 gap-4">
-                          <div className="text-center">
-                            <p className="text-2xl font-bold truncate">
-                              {viewingAgent.assignedLeads.from} - {viewingAgent.assignedLeads.to}
-                            </p>
-                            <p className="text-sm text-muted-foreground">Assigned Leads Range</p>
-                          </div>
-                          <div className="text-center">
-                            <p className="text-2xl font-bold">
-                              {viewingAgent.assignedLeads.to - viewingAgent.assignedLeads.from}
-                            </p>
-                            <p className="text-sm text-muted-foreground">Total Leads</p>
-                          </div>
-                          <div className="text-center">
-                            <p className="text-2xl font-bold">-</p>
-                            <p className="text-sm text-muted-foreground">Conversion Rate</p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex justify-between space-x-2 pt-4">
-                      <Button 
-                        variant="destructive"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteClick(viewingAgent);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Delete Agent
-                      </Button>
-                      <div className="flex space-x-2">
-                        <Button 
-                          variant="outline"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEdit(viewingAgent);
-                          }}
-                        >
-                          <Edit className="h-4 w-4 mr-2" />
-                          Edit Agent
-                        </Button>
-                        <div className="flex space-x-1">
-                          <Button 
-                            variant="ghost" 
-                            size="icon"
-                            className="text-muted-foreground hover:text-foreground"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleContactAction('call', viewingAgent);
-                            }}
-                            title="Call"
-                          >
-                            <Phone className="h-5 w-5" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon"
-                            className="text-muted-foreground hover:text-foreground"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleContactAction('email', viewingAgent);
-                            }}
-                            title="Email"
-                          >
-                            <Mail className="h-5 w-5" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon"
-                            className="text-muted-foreground hover:text-foreground"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleContactAction('whatsapp', viewingAgent);
-                            }}
-                            title="WhatsApp"
-                          >
-                            <MessageSquare className="h-5 w-5" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </TabsContent>
-                
-                <TabsContent value="activities">
-                  <div className="space-y-4">
-                    <DialogDescription>
-                      Recent activities for {viewingAgent.name}
-                    </DialogDescription>
-                    
-                    {loadingActivities ? (
-                      <div className="flex justify-center items-center h-32">
-                        Loading activities...
-                      </div>
-                    ) : agentActivities.length === 0 ? (
-                      <div className="text-center py-8">
-                        <p className="text-muted-foreground">No activities found</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {agentActivities.map((activity) => (
-                          <div key={activity.id} className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
-                            <div className="flex-shrink-0 mt-1">
-                              {activity.action === 'agent_updated' && <Edit className="h-5 w-5 text-orange-500" />}
-                              {activity.action === 'agent_created' && <Plus className="h-5 w-5 text-green-500" />}
-                              {activity.action.includes('call') && <Phone className="h-5 w-5 text-blue-500" />}
-                              {activity.action.includes('email') && <Mail className="h-5 w-5 text-purple-500" />}
-                              {activity.action.includes('whatsapp') && <MessageSquare className="h-5 w-5 text-green-600" />}
-                              {activity.action === 'agent_deleted' && <Trash2 className="h-5 w-5 text-red-500" />}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex justify-between items-start">
-                                <p className="font-medium capitalize truncate">
-                                  {activity.action.replace(/_/g, ' ')}
-                                </p>
-                                <p className="text-sm text-muted-foreground flex-shrink-0 ml-2">
-                                  {new Date(activity.timestamp).toLocaleString()}
-                                </p>
-                              </div>
-                              
-                              {activity.leadDetails && (
-                                <div className="mt-1 text-sm">
-                                  <p className="truncate" title={activity.leadDetails.name + (activity.leadDetails.company ? ` (${activity.leadDetails.company})` : '')}>
-                                    <span className="font-medium">Lead:</span> {activity.leadDetails.name}
-                                    {activity.leadDetails.company && ` (${activity.leadDetails.company})`}
-                                  </p>
-                                  <p className="text-muted-foreground truncate" title={activity.leadDetails.email}>
-                                    {activity.leadDetails.email}
-                                  </p>
-                                  <p className="text-muted-foreground truncate" title={activity.leadDetails.phone}>
-                                    {activity.leadDetails.phone}
-                                  </p>
-                                </div>
-                              )}
-
-                              {activity.changes && (
-                                <div className="mt-2 space-y-1">
-                                  {Object.entries(activity.changes).map(([field, change]) => (
-                                    <div key={field} className="text-sm">
-                                      <p className="font-medium truncate">{change.fieldName}:</p>
-                                      <div className="flex gap-2">
-                                        <span className="text-red-500 line-through truncate" title={change.old}>
-                                          {truncateText(change.old, 30)}
-                                        </span>
-                                        <span>→</span>
-                                        <span className="text-green-500 truncate" title={change.new}>
-                                          {truncateText(change.new, 30)}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-
-                              {activity.environment && (
-                                <div className="mt-2 text-xs text-muted-foreground">
-                                  <p className="truncate">From: {activity.environment.device.split(' ')[0]}</p>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </TabsContent>
-              </Tabs>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
+                  ))}
+                </div>
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
+      </>
+    )}
+  </DialogContent>
+</Dialog>
 
       <AlertDialog open={deleteConfirmationOpen} onOpenChange={setDeleteConfirmationOpen}>
         <AlertDialogContent>

@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { User, Camera, Mail, Phone, Lock, Eye, EyeOff } from 'lucide-react';
+import { User, Camera, Mail, Phone, Lock, Eye, EyeOff, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { database } from '../../firebase';
 import { ref, get, update } from 'firebase/database';
@@ -542,9 +542,9 @@ export const ProfileSettings: React.FC = () => {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-2">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-        <p>{isDecrypting ? 'Decrypting profile data...' : 'Loading profile...'}</p>
+        <p className="text-sm sm:text-base">{isDecrypting ? 'Decrypting profile data...' : 'Loading profile...'}</p>
         {decryptionErrors.length > 0 && (
-          <div className="text-yellow-600 text-sm mt-2">
+          <div className="text-yellow-600 text-xs sm:text-sm mt-2 text-center px-4">
             Note: Some data may not display correctly
           </div>
         )}
@@ -553,25 +553,25 @@ export const ProfileSettings: React.FC = () => {
   }
 
   return (
-    <Card className="neuro border-none">
-      <CardHeader>
-        <CardTitle>Profile Settings</CardTitle>
-        <CardDescription>
+    <Card className="neuro border-none w-full max-w-4xl mx-auto">
+      <CardHeader className="px-4 sm:px-6">
+        <CardTitle className="text-lg sm:text-xl md:text-2xl">Profile Settings</CardTitle>
+        <CardDescription className="text-xs sm:text-sm">
           {user?.role === 'agent' ? 'Agent Profile' : 'Admin Profile'}
         </CardDescription>
       </CardHeader>
       
       {decryptionErrors.length > 0 && (
-        <div className="mx-6 mb-4 bg-yellow-50 border-l-4 border-yellow-400 p-4">
+        <div className="mx-4 sm:mx-6 mb-4 bg-yellow-50 border-l-4 border-yellow-400 p-3 sm:p-4 rounded-r-lg">
           <div className="flex items-start">
-            <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+            <div className="flex-shrink-0 pt-0.5">
+              <svg className="h-4 w-4 sm:h-5 sm:w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
               </svg>
             </div>
             <div className="ml-3">
-              <h3 className="text-sm font-medium text-yellow-800">Data Notice</h3>
-              <div className="mt-2 text-sm text-yellow-700">
+              <h3 className="text-xs sm:text-sm font-medium text-yellow-800">Data Notice</h3>
+              <div className="mt-1 text-xs sm:text-sm text-yellow-700">
                 <p>Some profile data couldn't be decrypted properly. Contact support if information appears incorrect.</p>
               </div>
             </div>
@@ -579,17 +579,19 @@ export const ProfileSettings: React.FC = () => {
         </div>
       )}
 
-      <CardContent className="space-y-6">
-        <div className="flex flex-col md:flex-row md:items-start gap-6">
-          <div className="flex flex-col items-center space-y-2">
+      <CardContent className="space-y-4 sm:space-y-6 px-4 sm:px-6">
+        {/* Avatar and Basic Info Section */}
+        <div className="flex flex-col items-center sm:items-start sm:flex-row gap-4 sm:gap-6">
+          {/* Avatar Upload Section */}
+          <div className="flex flex-col items-center space-y-2 sm:space-y-3">
             <label htmlFor="avatar-upload" className="cursor-pointer">
-              <Avatar className="h-24 w-24 relative group">
+              <Avatar className="h-20 w-20 sm:h-24 sm:w-24 md:h-28 md:w-28 relative group">
                 <AvatarImage src={formData.avatar} alt={`${formData.firstName} ${formData.lastName}`} />
-                <AvatarFallback className="text-2xl">
+                <AvatarFallback className="text-lg sm:text-xl md:text-2xl">
                   {formData.firstName?.charAt(0)}{formData.lastName?.charAt(0)}
                 </AvatarFallback>
                 <div className="absolute inset-0 bg-black/50 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                  <Camera className="h-8 w-8 text-white" />
+                  <Camera className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
                 </div>
               </Avatar>
             </label>
@@ -600,16 +602,18 @@ export const ProfileSettings: React.FC = () => {
               onChange={handleAvatarChange}
               className="hidden"
             />
-            <span className="text-xs text-muted-foreground text-center">
+            <span className="text-xs text-muted-foreground text-center max-w-[140px] sm:max-w-none">
               Click to change<br />(JPEG, JPG, PNG, GIF, WEBP)<br />Max 5MB
             </span>
           </div>
           
-          <div className="space-y-4 flex-1">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Basic Info Form */}
+          <div className="space-y-3 sm:space-y-4 flex-1 w-full">
+            {/* Name Fields */}
+            <div className="grid grid-cols-1 xs:grid-cols-2 gap-3 sm:gap-4">
               <div className="space-y-2">
-                <Label htmlFor="firstName" className="flex items-center gap-2">
-                  <User className="h-4 w-4" />
+                <Label htmlFor="firstName" className="flex items-center gap-2 text-xs sm:text-sm">
+                  <User className="h-3 w-3 sm:h-4 sm:w-4" />
                   First Name
                 </Label>
                 <Input 
@@ -617,13 +621,14 @@ export const ProfileSettings: React.FC = () => {
                   name="firstName"
                   value={formData.firstName}
                   onChange={handleChange}
-                  className="neuro-inset focus:shadow-none"
+                  className="neuro-inset focus:shadow-none text-sm sm:text-base h-9 sm:h-10"
+                  placeholder="Enter first name"
                 />
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="lastName" className="flex items-center gap-2">
-                  <User className="h-4 w-4" />
+                <Label htmlFor="lastName" className="flex items-center gap-2 text-xs sm:text-sm">
+                  <User className="h-3 w-3 sm:h-4 sm:w-4" />
                   Last Name
                 </Label>
                 <Input 
@@ -631,14 +636,16 @@ export const ProfileSettings: React.FC = () => {
                   name="lastName"
                   value={formData.lastName}
                   onChange={handleChange}
-                  className="neuro-inset focus:shadow-none"
+                  className="neuro-inset focus:shadow-none text-sm sm:text-base h-9 sm:h-10"
+                  placeholder="Enter last name"
                 />
               </div>
             </div>
             
+            {/* Email Field */}
             <div className="space-y-2">
-              <Label htmlFor="email" className="flex items-center gap-2">
-                <Mail className="h-4 w-4" />
+              <Label htmlFor="email" className="flex items-center gap-2 text-xs sm:text-sm">
+                <Mail className="h-3 w-3 sm:h-4 sm:w-4" />
                 Email Address
               </Label>
               <Input 
@@ -647,55 +654,62 @@ export const ProfileSettings: React.FC = () => {
                 type="email"
                 value={formData.email}
                 onChange={handleChange}
-                className="neuro-inset focus:shadow-none"
+                className="neuro-inset focus:shadow-none text-sm sm:text-base h-9 sm:h-10"
                 placeholder="your.email@example.com"
               />
             </div>
             
+            {/* Phone Field with Country Code */}
             <div className="space-y-2">
-              <Label htmlFor="phone" className="flex items-center gap-2">
-                <Phone className="h-4 w-4" />
+              <Label htmlFor="phone" className="flex items-center gap-2 text-xs sm:text-sm">
+                <Phone className="h-3 w-3 sm:h-4 sm:w-4" />
                 Phone Number
               </Label>
-              <div className="flex gap-2 items-center">
-                <Select value={formData.countryCode} onValueChange={handleCountryCodeChange}>
-                  <SelectTrigger className="w-40 neuro-inset">
-                    <div className="flex items-center gap-2 w-full">
-                      <span className="text-lg flex-shrink-0">{getCountryFlag(formData.countryCode)}</span>
-                      <span className="text-sm font-medium">{formData.countryCode}</span>
-                    </div>
-                  </SelectTrigger>
-                  <SelectContent className="max-h-60 w-64">
-                    {COUNTRY_CODES.map((country) => (
-                      <SelectItem key={country.code} value={country.dialCode} className="py-2">
-                        <div className="flex items-center gap-3">
-                          <span className="text-lg flex-shrink-0">{country.flag}</span>
-                          <span className="font-medium">{country.dialCode}</span>
-                          <span className="text-muted-foreground text-sm flex-1">{country.name}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="flex flex-col xs:flex-row gap-2 sm:gap-3 items-stretch xs:items-center">
+                {/* Country Code Selector */}
+                <div className="w-full xs:w-auto">
+                  <Select value={formData.countryCode} onValueChange={handleCountryCodeChange}>
+                    <SelectTrigger className="w-full xs:w-[140px] neuro-inset h-9 sm:h-10 text-sm">
+                      <div className="flex items-center gap-2 w-full">
+                        <span className="text-base sm:text-lg flex-shrink-0">{getCountryFlag(formData.countryCode)}</span>
+                        <span className="text-xs sm:text-sm font-medium truncate">{formData.countryCode}</span>
+                        <ChevronDown className="h-3 w-3 sm:h-4 sm:w-4 ml-auto flex-shrink-0" />
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent className="max-h-60 w-[280px] sm:w-[320px]">
+                      {COUNTRY_CODES.map((country) => (
+                        <SelectItem key={country.code} value={country.dialCode} className="py-2 sm:py-3 text-sm">
+                          <div className="flex items-center gap-2 sm:gap-3">
+                            <span className="text-base sm:text-lg flex-shrink-0">{country.flag}</span>
+                            <span className="font-medium text-xs sm:text-sm">{country.dialCode}</span>
+                            <span className="text-muted-foreground text-xs sm:text-sm flex-1 truncate">{country.name}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                {/* Phone Input */}
                 <div className="flex-1 relative">
                   <Input 
                     id="phone"
                     name="phone"
                     value={formData.phone}
                     onChange={handleChange}
-                    className="neuro-inset focus:shadow-none"
+                    className="neuro-inset focus:shadow-none text-sm sm:text-base h-9 sm:h-10 pr-12"
                     placeholder="1234567890"
                     maxLength={10}
                   />
                   {formData.phone && (
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
                       {formData.phone.length}/10
                     </div>
                   )}
                 </div>
               </div>
               {phoneError && (
-                <p className="text-sm text-red-500">{phoneError}</p>
+                <p className="text-xs text-red-500 mt-1">{phoneError}</p>
               )}
               <p className="text-xs text-muted-foreground">
                 Enter 10-digit phone number without country code
@@ -704,23 +718,25 @@ export const ProfileSettings: React.FC = () => {
           </div>
         </div>
         
+        {/* Bio Section */}
         <div className="space-y-2">
-          <Label htmlFor="bio">Professional Bio</Label>
+          <Label htmlFor="bio" className="text-xs sm:text-sm">Professional Bio</Label>
           <textarea 
             id="bio"
             name="bio"
             value={formData.bio}
             onChange={handleChange}
-            rows={4}
-            className="w-full neuro-inset p-3 rounded-md focus:shadow-none focus:outline-none resize-none"
+            rows={3}
+            className="w-full neuro-inset p-3 rounded-md focus:shadow-none focus:outline-none resize-none text-sm sm:text-base min-h-[80px]"
             placeholder="Tell us about yourself and your professional background..."
           />
         </div>
 
-        {/* <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Password Section - Commented out as per original
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="password" className="flex items-center gap-2">
-              <Lock className="h-4 w-4" />
+            <Label htmlFor="password" className="flex items-center gap-2 text-xs sm:text-sm">
+              <Lock className="h-3 w-3 sm:h-4 sm:w-4" />
               Password
             </Label>
             <div className="relative">
@@ -730,7 +746,7 @@ export const ProfileSettings: React.FC = () => {
                 type={showPassword ? "text" : "password"}
                 value={formData.password}
                 onChange={handleChange}
-                className="neuro-inset focus:shadow-none pr-10"
+                className="neuro-inset focus:shadow-none pr-10 text-sm sm:text-base h-9 sm:h-10"
                 placeholder="Enter new password"
               />
               <button 
@@ -738,14 +754,14 @@ export const ProfileSettings: React.FC = () => {
                 onClick={() => togglePasswordVisibility('password')}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               >
-                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {showPassword ? <EyeOff className="h-3 w-3 sm:h-4 sm:w-4" /> : <Eye className="h-3 w-3 sm:h-4 sm:w-4" />}
               </button>
             </div>
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="confirmPassword" className="flex items-center gap-2">
-              <Lock className="h-4 w-4" />
+            <Label htmlFor="confirmPassword" className="flex items-center gap-2 text-xs sm:text-sm">
+              <Lock className="h-3 w-3 sm:h-4 sm:w-4" />
               Confirm Password
             </Label>
             <div className="relative">
@@ -755,7 +771,7 @@ export const ProfileSettings: React.FC = () => {
                 type={showConfirmPassword ? "text" : "password"}
                 value={formData.confirmPassword}
                 onChange={handleChange}
-                className="neuro-inset focus:shadow-none pr-10"
+                className="neuro-inset focus:shadow-none pr-10 text-sm sm:text-base h-9 sm:h-10"
                 placeholder="Confirm new password"
               />
               <button 
@@ -763,17 +779,17 @@ export const ProfileSettings: React.FC = () => {
                 onClick={() => togglePasswordVisibility('confirmPassword')}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               >
-                {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {showConfirmPassword ? <EyeOff className="h-3 w-3 sm:h-4 sm:w-4" /> : <Eye className="h-3 w-3 sm:h-4 sm:w-4" />}
               </button>
             </div>
           </div>
         </div> */}
       </CardContent>
       
-      <CardFooter>
+      <CardFooter className="px-4 sm:px-6 pb-4 sm:pb-6">
         <Button 
           onClick={handleSave} 
-          className="neuro hover:shadow-none transition-all duration-300"
+          className="neuro hover:shadow-none transition-all duration-300 w-full sm:w-auto text-sm sm:text-base h-9 sm:h-10 px-4 sm:px-8"
           disabled={loading || isDecrypting || !!phoneError}
         >
           {loading ? 'Saving...' : 'Save Changes'}

@@ -459,13 +459,13 @@ export const AgentForm: React.FC<AgentFormProps> = ({ isOpen, onClose, onSubmit,
       if (user && user.uid === authUid) {
         await sendEmailVerification(user);
         setVerificationSent(true);
-        toast.success('Verification email sent to agent');
+        toast.success('Verification email sent to agent. Please check your spam folder if you don\'t see it in your inbox.');
         return true;
       } else {
         // Sign in with the agent's credentials to send verification
         // Note: This is a workaround and not recommended for production
         // In a real app, you should use a cloud function to send verification emails
-        toast.info('Please ask the agent to verify their email from the sign-in page');
+        toast.info('Please ask the agent to verify their email from the sign-in page. If you don\'t see the email, please check your spam folder.');
         return true;
       }
     } catch (error: any) {
@@ -571,7 +571,7 @@ export const AgentForm: React.FC<AgentFormProps> = ({ isOpen, onClose, onSubmit,
           );
           authUid = userCredential.user.uid;
           
-          // Send verification email
+          // Send verification email with spam folder message
           const emailSent = await sendVerificationEmail(authUid, formData.email);
           
           if (emailSent) {
@@ -717,7 +717,9 @@ export const AgentForm: React.FC<AgentFormProps> = ({ isOpen, onClose, onSubmit,
         )}
         {verificationSent && (
           <div className="mb-4 p-3 bg-blue-100 text-blue-700 rounded-md text-center">
-            Verification email sent. Please ask the agent to verify their email before proceeding.
+            Verification email sent. Please ask the agent to verify their email before proceeding. 
+            <br />
+            <strong>If you don't see the email, please check your spam folder.</strong>
           </div>
         )}
         <form onSubmit={handleSubmit} className="space-y-4 py-4">

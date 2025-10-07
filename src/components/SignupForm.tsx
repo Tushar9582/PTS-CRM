@@ -239,12 +239,13 @@ export const SignupForm: React.FC = () => {
       // Set account creation time for trial tracking
       setAccountCreatedTime(Date.now());
 
-      await sendEmailVerification(user);
-      setCurrentUser(user);
-      setVerificationSent(true);
+    // In the handleSubmit function, after sending verification email:
+await sendEmailVerification(user);
+setCurrentUser(user);
+setVerificationSent(true);
 
-      toast.success('Account created! Please verify your email.');
-      await signOut(auth);
+toast.success('Account created! Please verify your email. Check your spam folder if you don\'t see it.');
+await signOut(auth);
 
     } catch (error: any) {
       console.error('Signup error:', error);
@@ -265,17 +266,17 @@ export const SignupForm: React.FC = () => {
       setIsLoading(false);
     }
   };
-
-  const resendEmailVerification = async () => {
-    if (currentUser) {
-      try {
-        await sendEmailVerification(currentUser);
-        toast.success('Verification email resent');
-      } catch (error: any) {
-        toast.error('Failed to resend email');
-      }
+// In the resendEmailVerification function:
+const resendEmailVerification = async () => {
+  if (currentUser) {
+    try {
+      await sendEmailVerification(currentUser);
+      toast.success('Verification email resent. Check your spam folder if you don\'t see it.');
+    } catch (error: any) {
+      toast.error('Failed to resend email');
     }
-  };
+  }
+};
 
   const manuallyCheckVerification = async () => {
     if (currentUser) {
@@ -290,38 +291,41 @@ export const SignupForm: React.FC = () => {
     }
   };
 
-  if (verificationSent) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen p-6 space-y-4 bg-gradient-to-br from-secondary to-background dark:from-gray-900 dark:to-gray-800">
-        <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-lg max-w-md w-full"
-        >
-          <h2 className="text-2xl font-bold text-center text-gray-900 dark:text-white mb-4">Verify Your Email</h2>
-          <p className="text-sm text-center text-muted-foreground mb-6">
-            A verification email has been sent to <strong>{email}</strong>. <br />
-            Please verify your email to continue.
-          </p>
-          <div className="flex flex-col space-y-3">
-            <Button onClick={resendEmailVerification} className="w-full">
-              Resend Email
-            </Button>
-            <Button 
-              onClick={manuallyCheckVerification} 
-              variant="outline" 
-              className="w-full"
-            >
-              Manually Verified
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground text-center mt-4">
-            Once verified, you'll be redirected to login automatically.
-          </p>
-        </motion.div>
-      </div>
-    );
-  }
+ // In the verificationSent UI section:
+if (verificationSent) {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen p-6 space-y-4 bg-gradient-to-br from-secondary to-background dark:from-gray-900 dark:to-gray-800">
+      <motion.div
+        initial={{ scale: 0.8, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-lg max-w-md w-full"
+      >
+        <h2 className="text-2xl font-bold text-center text-gray-900 dark:text-white mb-4">Verify Your Email</h2>
+        <p className="text-sm text-center text-muted-foreground mb-6">
+          A verification email has been sent to <strong>{email}</strong>. <br />
+          Please verify your email to continue.
+          <br />
+          <strong className="text-blue-600">If you don't see the email, please check your spam folder.</strong>
+        </p>
+        <div className="flex flex-col space-y-3">
+          <Button onClick={resendEmailVerification} className="w-full">
+            Resend Email
+          </Button>
+          <Button 
+            onClick={manuallyCheckVerification} 
+            variant="outline" 
+            className="w-full"
+          >
+            Manually Verified
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground text-center mt-4">
+          Once verified, you'll be redirected to login automatically.
+        </p>
+      </motion.div>
+    </div>
+  );
+}
 
   return (
     <>
